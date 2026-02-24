@@ -1,33 +1,23 @@
-import { Tabs } from 'expo-router';
-import { User, Search } from 'lucide-react-native';
-import React from 'react';
-import Colors from '@/constants/colors';
+// template
+import { Tabs } from "expo-router";
+import { Code } from "lucide-react-native";
+import React from "react";
+
+import Colors from "@/constants/colors";
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.gold,
-        tabBarInactiveTintColor: Colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: Colors.surface,
-          borderTopColor: Colors.border,
-        },
-        headerShown: false,
+        tabBarActiveTintColor: Colors.light.tint,
+        headerShown: true,
       }}
     >
       <Tabs.Screen
-        name="(home)"
+        name="index"
         options={{
-          title: 'My Profile',
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{
-          title: 'Search',
-          tabBarIcon: ({ color, size }) => <Search size={size} color={color} />,
+          title: "Tab One",
+          tabBarIcon: ({ color }) => <Code color={color} />,
         }}
       />
     </Tabs>
