@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install -g expo-cli
-          npm install
+          npm install --legacy-peer-deps
 
       - name: Expo Prebuild (生成 iOS 工程)
         run: npx expo prebuild --platform ios
