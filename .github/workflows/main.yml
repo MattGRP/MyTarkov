@@ -1,4 +1,4 @@
-name: Build Unsigned IPA for AltStore
+name: Build Expo IPA for AltStore
 
 on:
   push:
@@ -13,45 +13,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          npm install -g expo-cli
+          npm install
+
+      - name: Expo Prebuild (生成 iOS 工程)
+        run: npx expo prebuild --platform ios
+
       - name: Set up Xcode
         run: |
-          # 选择当前镜像中最新的 Xcode
           XCODE_PATH=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-          xcodebuild -version
 
-      - name: Diagnostic & Build
+      - name: Build Unsigned IPA
         run: |
-          echo "=== 正在诊断仓库目录结构 ==="
-          ls -R
-          
-          echo "=== 正在寻找工程文件 ==="
-          # 寻找所有的 xcodeproj
-          ALL_PROJECTS=$(find . -name "*.xcodeproj")
-          echo "找到以下工程文件："
-          echo "$ALL_PROJECTS"
-          
-          # 获取第一个找到的工程路径
-          PROJECT_FILE=$(echo "$ALL_PROJECTS" | head -n 1)
-          
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "错误：全盘扫描未发现任何 .xcodeproj 文件！请检查仓库是否为空。"
-            exit 1
-          fi
-          
-          # 获取 Scheme 名 (通常和工程文件名一致，去掉后缀)
-          SCHEME_NAME=$(basename "$PROJECT_FILE" .xcodeproj)
-          
-          echo "=== 开始构建 ==="
-          echo "工程文件: $PROJECT_FILE"
-          echo "Scheme: $SCHEME_NAME"
-          
+          # Prebuild 默认会生成 ios/ 目录
+          cd ios
           xcodebuild build \
-            -project "$PROJECT_FILE" \
-            -scheme "$SCHEME_NAME" \
+            -workspace *.xcworkspace \
+            -scheme $(ls -d *.xcodeproj | sed 's/\.xcodeproj//') \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath ./build_output \
+            -derivedDataPath ../build_output \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -60,23 +49,13 @@ jobs:
       - name: Create IPA Structure
         run: |
           mkdir -p build_ipa/Payload
-          
-          # 在指定的输出目录中定位生成的 .app
-          APP_PATH=$(find ./build_output -name "TarkovPlayerStats.app" -type d | grep "Release-iphoneos" | head -n 1)
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: Could not find TarkovPlayerStats.app"
-            find ./build_output -name "*.app"
-            exit 1
-          fi
-          
+          APP_PATH=$(find ./build_output -name "*.app" -type d | grep "Release-iphoneos" | head -n 1)
           cp -R "$APP_PATH" build_ipa/Payload/
-          
           cd build_ipa
           zip -r MyTarkov_Unsigned.ipa Payload
-          
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TarkovPlayerStats-Unsigned-IPA
+          name: Expo-Tarkov-Unsigned-IPA
           path: build_ipa/MyTarkov_Unsigned.ipa
