@@ -14,7 +14,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.0.app
+        run: |
+          # 自动寻找 /Applications 下版本号最高的 Xcode
+          XCODE_PATH=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          echo "Using Xcode at $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
 
       - name: Build App Bundle (Unsigned)
         run: |
