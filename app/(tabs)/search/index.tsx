@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { searchPlayers, isIndexCached, getIndexLoadProgress } from '@/services/tarkovApi';
+import { searchPlayers, isIndexCached, getIndexLoadProgress, preloadIndex } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SearchScreen() {
@@ -15,6 +15,10 @@ export default function SearchScreen() {
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
   const [loadingMessage, setLoadingMessage] = useState<string>('');
+
+  useEffect(() => {
+    preloadIndex();
+  }, []);
 
   const searchMutation = useMutation({
     mutationFn: async (query: string) => {

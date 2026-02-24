@@ -6,13 +6,12 @@ const PROFILE_BASE_URL = 'https://players.tarkov.dev/profile';
 const CORS_PROXIES = [
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
 function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = 20000,
+  timeoutMs: number = 15000,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -23,14 +22,13 @@ function fetchWithTimeout(
 
 async function fetchDirect(
   url: string,
-  timeoutMs: number = 20000,
+  timeoutMs: number = 15000,
 ): Promise<Response> {
   console.log('[TarkovAPI] Direct fetch:', url);
   return fetchWithTimeout(
     url,
     {
       headers: {
-        'User-Agent': 'TarkovStats/1.0',
         Accept: 'application/json',
       },
     },
@@ -45,20 +43,15 @@ async function fetchViaProxy(
   let lastError: Error | null = null;
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     const proxyUrl = CORS_PROXIES[i](url);
-    console.log(
-      `[TarkovAPI] Trying proxy ${i + 1}/${CORS_PROXIES.length}:`,
-      proxyUrl,
-    );
+    console.log(`[TarkovAPI] Trying proxy ${i + 1}/${CORS_PROXIES.length}`);
     try {
       const res = await fetchWithTimeout(proxyUrl, {}, timeoutMs);
       if (res.ok) {
         console.log(`[TarkovAPI] Proxy ${i + 1} succeeded`);
         return res;
       }
-      console.log(`[TarkovAPI] Proxy ${i + 1} returned status:`, res.status);
       lastError = new Error(`Proxy returned ${res.status}`);
     } catch (err) {
-      console.log(`[TarkovAPI] Proxy ${i + 1} failed:`, err);
       lastError = err as Error;
     }
   }
@@ -67,7 +60,7 @@ async function fetchViaProxy(
 
 async function apiFetch(
   url: string,
-  timeoutMs: number = 20000,
+  timeoutMs: number = 15000,
 ): Promise<Response> {
   if (Platform.OS !== 'web') {
     return fetchDirect(url, timeoutMs);
@@ -118,34 +111,30 @@ async function fetchIndex(): Promise<Record<string, string>> {
     return indexLoadPromise;
   }
 
+  const startTime = Date.now();
   indexLoadPromise = (async () => {
     try {
       const url = `${PROFILE_BASE_URL}/index.json`;
       indexLoadProgress = 'Connecting to player database...';
       console.log('[TarkovAPI] Fetching player index...');
 
-      const response = await apiFetch(url, 120000);
+      const response = await apiFetch(url, 90000);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch index: ${response.status}`);
       }
 
-      indexLoadProgress = 'Downloading player database (~66MB)...';
-      console.log('[TarkovAPI] Index response received, reading body...');
+      indexLoadProgress = 'Downloading & parsing player database...';
+      console.log('[TarkovAPI] Index response received, parsing JSON directly...');
 
-      const text = await response.text();
-      console.log(
-        '[TarkovAPI] Index downloaded, size:',
-        (text.length / 1024 / 1024).toFixed(1),
-        'MB, parsing...',
-      );
-
-      indexLoadProgress = 'Parsing player database...';
-      const data = JSON.parse(text) as Record<string, string>;
+      const data = await response.json() as Record<string, string>;
       cachedIndex = data;
       indexLoadProgress = '';
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       console.log(
-        '[TarkovAPI] Index loaded, entries:',
+        '[TarkovAPI] Index loaded in',
+        elapsed,
+        's, entries:',
         Object.keys(cachedIndex).length,
       );
       return cachedIndex;
@@ -154,7 +143,7 @@ async function fetchIndex(): Promise<Record<string, string>> {
       indexLoadProgress = '';
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw new Error(
-          'Download timed out. The player database is very large (~66MB). Try entering an Account ID directly.',
+          'Download timed out. Try entering an Account ID directly.',
         );
       }
       throw err;
@@ -177,6 +166,14 @@ export function isIndexCached(): boolean {
 
 export function isIndexLoading(): boolean {
   return indexLoadPromise !== null && cachedIndex === null;
+}
+
+export function preloadIndex(): void {
+  if (cachedIndex || indexLoadPromise) return;
+  console.log('[TarkovAPI] Preloading index in background...');
+  fetchIndex().catch((err) => {
+    console.log('[TarkovAPI] Background preload failed:', err);
+  });
 }
 
 export async function searchPlayers(name: string): Promise<SearchResult[]> {
