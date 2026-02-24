@@ -3,7 +3,7 @@ name: Build Unsigned IPA for AltStore
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,35 +15,18 @@ jobs:
 
       - name: Set up Xcode
         run: |
-          # 自动选择最新的 Xcode
+          # 选择当前镜像中最新的 Xcode
           XCODE_PATH=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
-          echo "Using Xcode at $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
-      - name: Locate Project File
-        run: |
-          # 寻找工程文件并存入环境变量
-          WORKSPACE_PATH=$(find . -name "*.xcworkspace" | head -n 1)
-          PROJECT_PATH=$(find . -name "*.xcodeproj" | head -n 1)
-          
-          if [ -n "$WORKSPACE_PATH" ]; then
-            echo "TYPE=workspace" >> $GITHUB_ENV
-            echo "TARGET_PATH=$WORKSPACE_PATH" >> $GITHUB_ENV
-            echo "Found Workspace: $WORKSPACE_PATH"
-          else
-            echo "TYPE=project" >> $GITHUB_ENV
-            echo "TARGET_PATH=$PROJECT_PATH" >> $GITHUB_ENV
-            echo "Found Project: $PROJECT_PATH"
-          fi
-
       - name: Build App Bundle (Unsigned)
         run: |
-          # 使用 -derivedDataPath 指定输出路径到当前目录下的 build_output
-          # 这能解决后续找不到 .app 的问题
+          # 修正后的路径：TarkovPlayerStats/TarkovPlayerStats.xcodeproj
+          # 修正后的 Scheme：TarkovPlayerStats
           xcodebuild build \
-            -${{ env.TYPE }} "${{ env.TARGET_PATH }}" \
-            -scheme MyTarkov \
+            -project TarkovPlayerStats/TarkovPlayerStats.xcodeproj \
+            -scheme TarkovPlayerStats \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath ./build_output \
@@ -54,27 +37,24 @@ jobs:
 
       - name: Create IPA Structure
         run: |
-          # 创建标准的 IPA 目录结构
           mkdir -p build_ipa/Payload
           
-          # 在我们指定的输出目录中精准定位 .app
-          APP_PATH=$(find ./build_output -name "*.app" -type d | grep "Release-iphoneos" | head -n 1)
+          # 在指定的输出目录中定位生成的 .app
+          APP_PATH=$(find ./build_output -name "TarkovPlayerStats.app" -type d | grep "Release-iphoneos" | head -n 1)
           
           if [ -z "$APP_PATH" ]; then
-            echo "错误：未找到编译生成的 .app 文件！"
+            echo "Error: Could not find TarkovPlayerStats.app"
+            find ./build_output -name "*.app"
             exit 1
           fi
           
-          echo "正在拷贝 $APP_PATH 到 Payload..."
           cp -R "$APP_PATH" build_ipa/Payload/
           
-          # 压缩并命名
           cd build_ipa
           zip -r MyTarkov_Unsigned.ipa Payload
-          echo "IPA 构建成功"
-
+          
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyTarkov-Unsigned-IPA
+          name: TarkovPlayerStats-Unsigned-IPA
           path: build_ipa/MyTarkov_Unsigned.ipa
