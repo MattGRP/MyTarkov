@@ -1,36 +1,54 @@
 import { Platform } from 'react-native';
 import { PlayerProfile, SearchResult } from '@/types/tarkov';
 
-const RAW_BASE_URL = 'https://players.tarkov.dev/profile';
+const PROFILE_BASE_URL = 'https://players.tarkov.dev/profile';
 
 const CORS_PROXIES = [
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
-function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 20000): Promise<Response> {
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 20000,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
 }
 
-async function fetchWithProxy(url: string, timeoutMs: number = 20000): Promise<Response> {
-  if (Platform.OS !== 'web') {
-    console.log('[TarkovAPI] Native fetch:', url);
-    const res = await fetchWithTimeout(url, {
+async function fetchDirect(
+  url: string,
+  timeoutMs: number = 20000,
+): Promise<Response> {
+  console.log('[TarkovAPI] Direct fetch:', url);
+  return fetchWithTimeout(
+    url,
+    {
       headers: {
         'User-Agent': 'TarkovStats/1.0',
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
-    }, timeoutMs);
-    return res;
-  }
+    },
+    timeoutMs,
+  );
+}
 
+async function fetchViaProxy(
+  url: string,
+  timeoutMs: number = 30000,
+): Promise<Response> {
   let lastError: Error | null = null;
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     const proxyUrl = CORS_PROXIES[i](url);
-    console.log(`[TarkovAPI] Trying proxy ${i + 1}/${CORS_PROXIES.length}:`, proxyUrl);
+    console.log(
+      `[TarkovAPI] Trying proxy ${i + 1}/${CORS_PROXIES.length}:`,
+      proxyUrl,
+    );
     try {
       const res = await fetchWithTimeout(proxyUrl, {}, timeoutMs);
       if (res.ok) {
@@ -47,18 +65,34 @@ async function fetchWithProxy(url: string, timeoutMs: number = 20000): Promise<R
   throw lastError ?? new Error('All proxies failed');
 }
 
-let cachedIndex: Record<string, string> | null = null;
-let indexLoadPromise: Promise<Record<string, string>> | null = null;
+async function apiFetch(
+  url: string,
+  timeoutMs: number = 20000,
+): Promise<Response> {
+  if (Platform.OS !== 'web') {
+    return fetchDirect(url, timeoutMs);
+  }
 
-export async function fetchPlayerProfile(accountId: string): Promise<PlayerProfile> {
+  try {
+    const directRes = await fetchDirect(url, timeoutMs);
+    if (directRes.ok) return directRes;
+  } catch (e) {
+    console.log('[TarkovAPI] Direct fetch failed on web, trying proxies:', e);
+  }
+
+  return fetchViaProxy(url, timeoutMs);
+}
+
+export async function fetchPlayerProfile(
+  accountId: string,
+): Promise<PlayerProfile> {
   console.log('[TarkovAPI] Fetching profile for:', accountId);
-  const url = `${RAW_BASE_URL}/${accountId}.json`;
-  const response = await fetchWithProxy(url);
+  const url = `${PROFILE_BASE_URL}/${accountId}.json`;
+  const response = await apiFetch(url);
 
   if (response.status === 404) {
     throw new Error('Player not found');
   }
-
   if (!response.ok) {
     throw new Error(`Network error: ${response.status}`);
   }
@@ -66,6 +100,14 @@ export async function fetchPlayerProfile(accountId: string): Promise<PlayerProfi
   const data = await response.json();
   console.log('[TarkovAPI] Profile loaded:', data?.info?.nickname);
   return data as PlayerProfile;
+}
+
+let cachedIndex: Record<string, string> | null = null;
+let indexLoadPromise: Promise<Record<string, string>> | null = null;
+let indexLoadProgress: string = '';
+
+export function getIndexLoadProgress(): string {
+  return indexLoadProgress;
 }
 
 async function fetchIndex(): Promise<Record<string, string>> {
@@ -78,24 +120,42 @@ async function fetchIndex(): Promise<Record<string, string>> {
 
   indexLoadPromise = (async () => {
     try {
-      console.log('[TarkovAPI] Fetching player index (~66MB, this may take a moment)...');
-      const url = `${RAW_BASE_URL}/index.json`;
-      const response = await fetchWithProxy(url, 60000);
+      const url = `${PROFILE_BASE_URL}/index.json`;
+      indexLoadProgress = 'Connecting to player database...';
+      console.log('[TarkovAPI] Fetching player index...');
+
+      const response = await apiFetch(url, 120000);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch index: ${response.status}`);
       }
 
+      indexLoadProgress = 'Downloading player database (~66MB)...';
+      console.log('[TarkovAPI] Index response received, reading body...');
+
       const text = await response.text();
-      console.log('[TarkovAPI] Index downloaded, size:', (text.length / 1024 / 1024).toFixed(1), 'MB, parsing...');
+      console.log(
+        '[TarkovAPI] Index downloaded, size:',
+        (text.length / 1024 / 1024).toFixed(1),
+        'MB, parsing...',
+      );
+
+      indexLoadProgress = 'Parsing player database...';
       const data = JSON.parse(text) as Record<string, string>;
       cachedIndex = data;
-      console.log('[TarkovAPI] Index loaded, entries:', Object.keys(cachedIndex).length);
+      indexLoadProgress = '';
+      console.log(
+        '[TarkovAPI] Index loaded, entries:',
+        Object.keys(cachedIndex).length,
+      );
       return cachedIndex;
     } catch (err) {
       indexLoadPromise = null;
+      indexLoadProgress = '';
       if (err instanceof DOMException && err.name === 'AbortError') {
-        throw new Error('Search index download timed out. The player database is very large (~66MB). Try entering an Account ID directly instead.');
+        throw new Error(
+          'Download timed out. The player database is very large (~66MB). Try entering an Account ID directly.',
+        );
       }
       throw err;
     }
@@ -107,6 +167,7 @@ async function fetchIndex(): Promise<Record<string, string>> {
 export function clearIndexCache(): void {
   cachedIndex = null;
   indexLoadPromise = null;
+  indexLoadProgress = '';
   console.log('[TarkovAPI] Index cache cleared');
 }
 

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { searchPlayers, isIndexCached } from '@/services/tarkovApi';
+import { searchPlayers, isIndexCached, getIndexLoadProgress } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SearchScreen() {
@@ -14,8 +14,22 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
+
   const searchMutation = useMutation({
     mutationFn: async (query: string) => {
+      if (!isIndexCached()) {
+        const interval = setInterval(() => {
+          setLoadingMessage(getIndexLoadProgress());
+        }, 500);
+        try {
+          const res = await searchPlayers(query);
+          return res;
+        } finally {
+          clearInterval(interval);
+          setLoadingMessage('');
+        }
+      }
       return await searchPlayers(query);
     },
     onSuccess: (data) => {
@@ -123,7 +137,7 @@ export default function SearchScreen() {
           <ActivityIndicator size="large" color={Colors.gold} />
           {!isIndexCached() && (
             <View style={styles.loadingTextWrap}>
-              <Text style={styles.loadingTitle}>Downloading player database...</Text>
+              <Text style={styles.loadingTitle}>{loadingMessage || 'Downloading player database...'}</Text>
               <Text style={styles.loadingSubtitle}>First search may take 10-30s due to database size (~66MB).{"\n"}Subsequent searches will be instant.</Text>
             </View>
           )}
