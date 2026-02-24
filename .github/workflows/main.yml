@@ -23,8 +23,12 @@ jobs:
 
       - name: Build App Bundle (Unsigned)
         run: |
+          # 自动寻找项目文件路径
+          PROJECT_PATH=$(find . -name "*.xcodeproj" | head -n 1)
+          echo "Found project at $PROJECT_PATH"
+          
           xcodebuild build \
-            -project MyTarkov.xcodeproj \
+            -project "$PROJECT_PATH" \
             -scheme MyTarkov \
             -configuration Release \
             -sdk iphoneos \
