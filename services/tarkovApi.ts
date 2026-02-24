@@ -3,19 +3,50 @@ import { PlayerProfile, SearchResult } from '@/types/tarkov';
 
 const RAW_BASE_URL = 'https://players.tarkov.dev/profile';
 
-function proxyUrl(url: string): string {
-  if (Platform.OS === 'web') {
-    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+const CORS_PROXIES = [
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function fetchWithProxy(url: string): Promise<Response> {
+  if (Platform.OS !== 'web') {
+    console.log('[TarkovAPI] Native fetch:', url);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'TarkovStats/1.0',
+        'Accept': 'application/json',
+      },
+    });
+    return res;
   }
-  return url;
+
+  let lastError: Error | null = null;
+  for (let i = 0; i < CORS_PROXIES.length; i++) {
+    const proxyUrl = CORS_PROXIES[i](url);
+    console.log(`[TarkovAPI] Trying proxy ${i + 1}/${CORS_PROXIES.length}:`, proxyUrl);
+    try {
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        console.log(`[TarkovAPI] Proxy ${i + 1} succeeded`);
+        return res;
+      }
+      console.log(`[TarkovAPI] Proxy ${i + 1} returned status:`, res.status);
+      lastError = new Error(`Proxy returned ${res.status}`);
+    } catch (err) {
+      console.log(`[TarkovAPI] Proxy ${i + 1} failed:`, err);
+      lastError = err as Error;
+    }
+  }
+  throw lastError ?? new Error('All proxies failed');
 }
 
 let cachedIndex: Record<string, string> | null = null;
 
 export async function fetchPlayerProfile(accountId: string): Promise<PlayerProfile> {
   console.log('[TarkovAPI] Fetching profile for:', accountId);
-  const url = proxyUrl(`${RAW_BASE_URL}/${accountId}.json`);
-  const response = await fetch(url);
+  const url = `${RAW_BASE_URL}/${accountId}.json`;
+  const response = await fetchWithProxy(url);
 
   if (response.status === 404) {
     throw new Error('Player not found');
@@ -34,8 +65,8 @@ async function fetchIndex(): Promise<Record<string, string>> {
   if (cachedIndex) return cachedIndex;
 
   console.log('[TarkovAPI] Fetching player index...');
-  const url = proxyUrl(`${RAW_BASE_URL}/index.json`);
-  const response = await fetch(url);
+  const url = `${RAW_BASE_URL}/index.json`;
+  const response = await fetchWithProxy(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch index: ${response.status}`);
@@ -45,6 +76,11 @@ async function fetchIndex(): Promise<Record<string, string>> {
   cachedIndex = data as Record<string, string>;
   console.log('[TarkovAPI] Index loaded, entries:', Object.keys(cachedIndex).length);
   return cachedIndex;
+}
+
+export function clearIndexCache(): void {
+  cachedIndex = null;
+  console.log('[TarkovAPI] Index cache cleared');
 }
 
 export async function searchPlayers(name: string): Promise<SearchResult[]> {
