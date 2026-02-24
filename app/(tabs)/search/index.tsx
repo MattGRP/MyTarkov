@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { searchPlayers } from '@/services/tarkovApi';
+import { searchPlayers, isIndexCached } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SearchScreen() {
@@ -20,6 +20,10 @@ export default function SearchScreen() {
     },
     onSuccess: (data) => {
       setResults(data);
+      setHasSearched(true);
+    },
+    onError: (error) => {
+      console.log('[Search] Error:', error.message);
       setHasSearched(true);
     },
   });
@@ -117,6 +121,12 @@ export default function SearchScreen() {
       {searchMutation.isPending && (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.gold} />
+          {!isIndexCached() && (
+            <View style={styles.loadingTextWrap}>
+              <Text style={styles.loadingTitle}>Downloading player database...</Text>
+              <Text style={styles.loadingSubtitle}>First search may take 10-30s due to database size (~66MB).{"\n"}Subsequent searches will be instant.</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -248,6 +258,23 @@ const styles = StyleSheet.create({
   loadingWrap: {
     paddingTop: 48,
     alignItems: 'center',
+    gap: 16,
+  },
+  loadingTextWrap: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 6,
+  },
+  loadingTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  loadingSubtitle: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   emptyState: {
     alignItems: 'center',
