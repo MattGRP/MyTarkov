@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { searchPlayers, isIndexCached, getIndexLoadProgress, preloadIndex } from '@/services/tarkovApi';
+import { searchPlayers, isIndexCached, isIndexLoading, getIndexLoadProgress, preloadIndex } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SearchScreen() {
@@ -15,9 +15,19 @@ export default function SearchScreen() {
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
   const [loadingMessage, setLoadingMessage] = useState<string>('');
+  const [preloading, setPreloading] = useState<boolean>(!isIndexCached() && !isIndexLoading());
 
   useEffect(() => {
     preloadIndex();
+    const interval = setInterval(() => {
+      const progress = getIndexLoadProgress();
+      setLoadingMessage(progress);
+      if (isIndexCached()) {
+        setPreloading(false);
+        clearInterval(interval);
+      }
+    }, 500);
+    return () => clearInterval(interval);
   }, []);
 
   const searchMutation = useMutation({
@@ -173,11 +183,25 @@ export default function SearchScreen() {
 
       {!hasSearched && !searchMutation.isPending && results.length === 0 && (
         <View style={styles.placeholderSection}>
-          <Search size={44} color={Colors.goldDim} />
-          <Text style={styles.placeholderTitle}>Search for a player</Text>
-          <Text style={styles.placeholderSubtitle}>
-            Enter a player name to search the database,{'\n'}or enter an Account ID to view directly.
-          </Text>
+          {preloading && !isIndexCached() ? (
+            <>
+              <ActivityIndicator size="large" color={Colors.gold} />
+              <Text style={styles.placeholderTitle}>{loadingMessage || 'Loading player database...'}</Text>
+              <Text style={styles.placeholderSubtitle}>
+                Downloading ~66MB database in background.{'\n'}You can search once it finishes.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Search size={44} color={Colors.goldDim} />
+              <Text style={styles.placeholderTitle}>Search for a player</Text>
+              <Text style={styles.placeholderSubtitle}>
+                {isIndexCached()
+                  ? 'Database loaded! Enter a player name to search.'
+                  : 'Enter a player name to search the database,\nor enter an Account ID to view directly.'}
+              </Text>
+            </>
+          )}
           <View style={styles.hintRow}>
             <View style={styles.hintCard}>
               <Crosshair size={20} color={Colors.goldDim} />
