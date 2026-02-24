@@ -3,7 +3,7 @@ name: Build Unsigned IPA for AltStore
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,23 +15,20 @@ jobs:
 
       - name: Set up Xcode
         run: |
-          # 自动寻找 /Applications 下版本号最高的 Xcode
+          # 自动选择最新的 Xcode
           XCODE_PATH=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
-          echo "Using Xcode at $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
       - name: Build App Bundle (Unsigned)
         run: |
-          # 自动寻找项目文件路径
-          PROJECT_PATH=$(find . -name "*.xcodeproj" | head -n 1)
-          echo "Found project at $PROJECT_PATH"
-          
+          # 直接指向 app/ 目录下的工程文件
           xcodebuild build \
-            -project "$PROJECT_PATH" \
+            -project app/MyTarkov.xcodeproj \
             -scheme MyTarkov \
             -configuration Release \
             -sdk iphoneos \
+            -derivedDataPath ./build_output \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -39,18 +36,25 @@ jobs:
 
       - name: Create IPA Structure
         run: |
-          mkdir -p build/Payload
-          # 找到编译出的 .app 文件并移动到 Payload 文件夹
-          # 路径通常在项目根目录下的 build 文件夹内，取决于 xcodebuild 的默认输出
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d | grep "Release-iphoneos" | head -n 1)
-          cp -R "$APP_PATH" build/Payload/
+          mkdir -p build_ipa/Payload
           
-          # 打包成 ipa
-          cd build
+          # 在指定的输出目录中定位 .app
+          APP_PATH=$(find ./build_output -name "MyTarkov.app" -type d | grep "Release-iphoneos" | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Could not find MyTarkov.app"
+            # 打印目录结构协助排查
+            find ./build_output -name "*.app"
+            exit 1
+          fi
+          
+          cp -R "$APP_PATH" build_ipa/Payload/
+          
+          cd build_ipa
           zip -r MyTarkov_Unsigned.ipa Payload
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MyTarkov-Unsigned-IPA
-          path: build/MyTarkov_Unsigned.ipa
+          path: build_ipa/MyTarkov_Unsigned.ipa
