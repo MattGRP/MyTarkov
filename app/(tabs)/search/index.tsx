@@ -32,9 +32,10 @@ export default function SearchScreen() {
     if (/^\d+$/.test(query)) {
       router.push({ pathname: '/search/player' as never, params: { accountId: query } });
     } else {
+      searchMutation.reset();
       searchMutation.mutate(query);
     }
-  }, [searchText, router, searchMutation]);
+  }, [searchText, router, searchMutation.mutate, searchMutation.reset]);
 
   const handleClear = useCallback(() => {
     setSearchText('');
