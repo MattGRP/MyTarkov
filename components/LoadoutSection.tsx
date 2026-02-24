@@ -1,9 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
-import { Crosshair, Shield, HardHat, Package } from 'lucide-react-native';
+import { Shield, Package } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { EquipmentItem, getSlotDisplayName, getItemImageURL, MAIN_SLOTS } from '@/types/tarkov';
+import { useLanguage } from '@/providers/LanguageProvider';
+import { EquipmentItem, getItemImageURL } from '@/types/tarkov';
+import { Language } from '@/constants/i18n';
 
 interface LoadoutSectionProps {
   equippedItems: Record<string, EquipmentItem>;
@@ -13,7 +15,37 @@ const WEAPON_SLOTS = ['FirstPrimaryWeapon', 'SecondPrimaryWeapon', 'Holster', 'S
 const GEAR_SLOTS = ['ArmorVest', 'TacticalVest', 'Backpack', 'SecuredContainer'];
 const HEAD_SLOTS = ['Headwear', 'Earpiece', 'FaceCover', 'Eyewear'];
 
-function EquipmentRow({ slot, item, isLast }: { slot: string; item: EquipmentItem; isLast: boolean }) {
+function getSlotLabel(slot: string, language: Language): string {
+  const en: Record<string, string> = {
+    FirstPrimaryWeapon: 'Primary',
+    SecondPrimaryWeapon: 'Secondary',
+    Holster: 'Sidearm',
+    ArmorVest: 'Armor',
+    TacticalVest: 'Rig',
+    FaceCover: 'Face Cover',
+    SecuredContainer: 'Secure',
+    ArmBand: 'Armband',
+  };
+  const zh: Record<string, string> = {
+    FirstPrimaryWeapon: '主武器',
+    SecondPrimaryWeapon: '副武器',
+    Holster: '手枪',
+    ArmorVest: '护甲',
+    TacticalVest: '战术背心',
+    FaceCover: '面罩',
+    SecuredContainer: '安全箱',
+    ArmBand: '臂章',
+    Headwear: '头盔',
+    Earpiece: '耳机',
+    Eyewear: '眼镜',
+    Backpack: '背包',
+    Scabbard: '近战武器',
+  };
+  if (language === 'zh') return zh[slot] ?? slot;
+  return en[slot] ?? slot;
+}
+
+function EquipmentRow({ slot, item, isLast, language }: { slot: string; item: EquipmentItem; isLast: boolean; language: Language }) {
   const dur = item.upd?.Repairable?.Durability;
   const maxDur = item.upd?.Repairable?.MaxDurability;
   const hasDurability = dur !== undefined && maxDur !== undefined && maxDur > 0;
@@ -31,7 +63,7 @@ function EquipmentRow({ slot, item, isLast }: { slot: string; item: EquipmentIte
           />
         </View>
         <View style={styles.equipInfo}>
-          <Text style={styles.slotName}>{getSlotDisplayName(slot)}</Text>
+          <Text style={styles.slotName}>{getSlotLabel(slot, language)}</Text>
           <Text style={styles.itemId} numberOfLines={1}>Item {item._tpl.slice(-8)}</Text>
           {hasDurability && (
             <View style={styles.durRow}>
@@ -48,7 +80,7 @@ function EquipmentRow({ slot, item, isLast }: { slot: string; item: EquipmentIte
   );
 }
 
-function SlotGroup({ slots, equippedItems }: { slots: string[]; equippedItems: Record<string, EquipmentItem> }) {
+function SlotGroup({ slots, equippedItems, language }: { slots: string[]; equippedItems: Record<string, EquipmentItem>; language: Language }) {
   const activeSlots = slots.filter((s) => equippedItems[s]);
   if (activeSlots.length === 0) return null;
 
@@ -60,6 +92,7 @@ function SlotGroup({ slots, equippedItems }: { slots: string[]; equippedItems: R
           slot={slot}
           item={equippedItems[slot]}
           isLast={idx === activeSlots.length - 1}
+          language={language}
         />
       ))}
     </View>
@@ -67,28 +100,29 @@ function SlotGroup({ slots, equippedItems }: { slots: string[]; equippedItems: R
 }
 
 export default React.memo(function LoadoutSection({ equippedItems }: LoadoutSectionProps) {
+  const { t, language } = useLanguage();
   const hasItems = Object.keys(equippedItems).length > 0;
 
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
         <Package size={18} color={Colors.gold} />
-        <Text style={styles.sectionTitle}>Loadout</Text>
+        <Text style={styles.sectionTitle}>{t.loadout}</Text>
       </View>
 
       {!hasItems ? (
         <View style={styles.emptyCard}>
           <Shield size={28} color={Colors.textSecondary} />
-          <Text style={styles.emptyText}>No loadout data available</Text>
+          <Text style={styles.emptyText}>{t.noLoadout}</Text>
         </View>
       ) : (
         <View style={styles.groupsWrap}>
-          <SlotGroup slots={WEAPON_SLOTS} equippedItems={equippedItems} />
-          <SlotGroup slots={GEAR_SLOTS} equippedItems={equippedItems} />
-          <SlotGroup slots={HEAD_SLOTS} equippedItems={equippedItems} />
+          <SlotGroup slots={WEAPON_SLOTS} equippedItems={equippedItems} language={language} />
+          <SlotGroup slots={GEAR_SLOTS} equippedItems={equippedItems} language={language} />
+          <SlotGroup slots={HEAD_SLOTS} equippedItems={equippedItems} language={language} />
           {equippedItems['ArmBand'] && (
             <View style={styles.groupCard}>
-              <EquipmentRow slot="ArmBand" item={equippedItems['ArmBand']} isLast />
+              <EquipmentRow slot="ArmBand" item={equippedItems['ArmBand']} isLast language={language} />
             </View>
           )}
         </View>

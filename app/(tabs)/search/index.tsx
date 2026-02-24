@@ -5,12 +5,16 @@ import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
+import { useLanguage } from '@/providers/LanguageProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { searchPlayers, isIndexCached, isIndexLoading, getIndexLoadProgress, preloadIndex } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SearchScreen() {
   const router = useRouter();
-  const [searchText, setSearchText] = useState<string>('');
+  const { t } = useLanguage();
+  const { defaultSearchName, saveDefaultSearchName } = useAuth();
+  const [searchText, setSearchText] = useState<string>(defaultSearchName);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
@@ -60,6 +64,7 @@ export default function SearchScreen() {
     const query = searchText.trim();
     if (!query) return;
     Keyboard.dismiss();
+    saveDefaultSearchName(query);
 
     if (/^\d+$/.test(query)) {
       router.push({ pathname: '/search/player' as never, params: { accountId: query } });
@@ -67,7 +72,7 @@ export default function SearchScreen() {
       searchMutation.reset();
       searchMutation.mutate(query);
     }
-  }, [searchText, router, searchMutation.mutate, searchMutation.reset]);
+  }, [searchText, router, searchMutation.mutate, searchMutation.reset, saveDefaultSearchName]);
 
   const handleClear = useCallback(() => {
     setSearchText('');
@@ -109,8 +114,8 @@ export default function SearchScreen() {
           <Crosshair size={120} color="rgba(255,255,255,0.03)" strokeWidth={1} />
         </View>
         <View style={styles.headerContent}>
-          <Text style={styles.headerSubtitle}>ESCAPE FROM TARKOV</Text>
-          <Text style={styles.headerTitle}>Player Lookup</Text>
+          <Text style={styles.headerSubtitle}>{t.searchHeaderSubtitle}</Text>
+          <Text style={styles.headerTitle}>{t.searchHeaderTitle}</Text>
         </View>
       </View>
 
@@ -120,7 +125,7 @@ export default function SearchScreen() {
             <Search size={18} color={Colors.textSecondary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Player name or Account ID"
+              placeholder={t.searchPlaceholder}
               placeholderTextColor={Colors.textTertiary}
               value={searchText}
               onChangeText={setSearchText}
@@ -151,8 +156,8 @@ export default function SearchScreen() {
           <ActivityIndicator size="large" color={Colors.gold} />
           {!isIndexCached() && (
             <View style={styles.loadingTextWrap}>
-              <Text style={styles.loadingTitle}>{loadingMessage || 'Downloading player database...'}</Text>
-              <Text style={styles.loadingSubtitle}>First search may take 10-30s due to database size (~66MB).{"\n"}Subsequent searches will be instant.</Text>
+              <Text style={styles.loadingTitle}>{loadingMessage || t.searchDownloading}</Text>
+              <Text style={styles.loadingSubtitle}>{t.searchDownloadingSub}</Text>
             </View>
           )}
         </View>
@@ -161,14 +166,14 @@ export default function SearchScreen() {
       {hasSearched && results.length === 0 && !searchMutation.isPending && (
         <View style={styles.emptyState}>
           <UserX size={36} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No players found</Text>
-          <Text style={styles.emptySubtitle}>Try a different name or enter an Account ID directly</Text>
+          <Text style={styles.emptyTitle}>{t.searchNoPlayers}</Text>
+          <Text style={styles.emptySubtitle}>{t.searchNoPlayersSub}</Text>
         </View>
       )}
 
       {results.length > 0 && (
         <View style={styles.resultsSection}>
-          <Text style={styles.resultsCount}>{results.length} results</Text>
+          <Text style={styles.resultsCount}>{results.length} {t.searchResults}</Text>
           <FlatList
             data={results}
             keyExtractor={(item) => item.id}
@@ -186,34 +191,30 @@ export default function SearchScreen() {
           {preloading && !isIndexCached() ? (
             <>
               <ActivityIndicator size="large" color={Colors.gold} />
-              <Text style={styles.placeholderTitle}>{loadingMessage || 'Loading player database...'}</Text>
-              <Text style={styles.placeholderSubtitle}>
-                Downloading ~66MB database in background.{'\n'}You can search once it finishes.
-              </Text>
+              <Text style={styles.placeholderTitle}>{loadingMessage || t.searchDownloading}</Text>
+              <Text style={styles.placeholderSubtitle}>{t.searchFirstTime}</Text>
             </>
           ) : (
             <>
               <Search size={44} color={Colors.goldDim} />
-              <Text style={styles.placeholderTitle}>Search for a player</Text>
+              <Text style={styles.placeholderTitle}>{t.searchForPlayer}</Text>
               <Text style={styles.placeholderSubtitle}>
-                {isIndexCached()
-                  ? 'Database loaded! Enter a player name to search.'
-                  : 'Enter a player name to search the database,\nor enter an Account ID to view directly.'}
+                {isIndexCached() ? t.searchDbLoaded : t.searchDbDefault}
               </Text>
             </>
           )}
           <View style={styles.hintRow}>
             <View style={styles.hintCard}>
               <Crosshair size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>K/D Ratio</Text>
+              <Text style={styles.hintLabel}>{t.hintKD}</Text>
             </View>
             <View style={styles.hintCard}>
               <BarChart3 size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>Survival Rate</Text>
+              <Text style={styles.hintLabel}>{t.hintSurvival}</Text>
             </View>
             <View style={styles.hintCard}>
               <Star size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>Skills</Text>
+              <Text style={styles.hintLabel}>{t.hintSkills}</Text>
             </View>
           </View>
         </View>

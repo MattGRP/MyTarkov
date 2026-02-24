@@ -1,14 +1,16 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings, RefreshCw, LogOut, AlertTriangle } from 'lucide-react-native';
+import { LogOut, AlertTriangle, Globe } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 
 export default function MyProfileScreen() {
-  const { playerAccountId, playerName, signOut, savePlayer } = useAuth();
+  const { playerAccountId, signOut } = useAuth();
+  const { t, language, toggleLanguage } = useLanguage();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
@@ -26,17 +28,17 @@ export default function MyProfileScreen() {
   }, [queryClient, playerAccountId]);
 
   const handleSignOut = useCallback(() => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: signOut },
+    Alert.alert(t.signOutConfirm, t.signOutConfirmMessage, [
+      { text: t.cancel, style: 'cancel' },
+      { text: t.signOut, style: 'destructive', onPress: signOut },
     ]);
-  }, [signOut]);
+  }, [signOut, t]);
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.loadingText}>Loading your profile...</Text>
+        <Text style={styles.loadingText}>{t.loadingProfile}</Text>
       </View>
     );
   }
@@ -45,10 +47,10 @@ export default function MyProfileScreen() {
     return (
       <View style={styles.centerContainer}>
         <AlertTriangle size={44} color={Colors.statOrange} />
-        <Text style={styles.errorTitle}>Failed to load profile</Text>
+        <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
         <Text style={styles.errorMessage}>{(profileQuery.error as Error).message}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={styles.retryText}>{t.retry}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -68,13 +70,23 @@ export default function MyProfileScreen() {
       isRefreshing={isRefreshing}
       onRefresh={handleRefresh}
       headerRight={
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={handleSignOut}
-          testID="sign-out-button"
-        >
-          <LogOut size={20} color={Colors.gold} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={toggleLanguage}
+            activeOpacity={0.7}
+          >
+            <Globe size={18} color={Colors.gold} />
+            <Text style={styles.langLabel}>{language === 'en' ? '中文' : 'EN'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleSignOut}
+            testID="sign-out-button"
+          >
+            <LogOut size={18} color={Colors.gold} />
+          </TouchableOpacity>
+        </View>
       }
     />
   );
@@ -115,12 +127,23 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: '#1A1A14',
   },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+  headerActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  langLabel: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.gold,
   },
 });

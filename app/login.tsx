@@ -1,15 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Crosshair, ChevronRight } from 'lucide-react-native';
+import { Crosshair, ChevronRight, Globe } from 'lucide-react-native';
 import { Stack } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-
-const { width } = Dimensions.get('window');
+import { useLanguage } from '@/providers/LanguageProvider';
 
 export default function LoginScreen() {
   const { continueAsGuest } = useAuth();
+  const { t, language, toggleLanguage } = useLanguage();
 
   return (
     <View style={styles.container}>
@@ -24,6 +24,17 @@ export default function LoginScreen() {
       <View style={styles.decorCircle2} />
 
       <View style={styles.content}>
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={styles.langButton}
+            onPress={toggleLanguage}
+            activeOpacity={0.7}
+          >
+            <Globe size={16} color={Colors.gold} />
+            <Text style={styles.langText}>{language === 'en' ? '中文' : 'EN'}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.spacer} />
 
         <View style={styles.heroSection}>
@@ -34,13 +45,11 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.titleBlock}>
-            <Text style={styles.subtitle}>ESCAPE FROM TARKOV</Text>
-            <Text style={styles.title}>Player Stats</Text>
+            <Text style={styles.subtitle}>{t.loginSubtitle}</Text>
+            <Text style={styles.title}>{t.loginTitle}</Text>
           </View>
 
-          <Text style={styles.description}>
-            Track your raids, K/D ratio, survival rate,{'\n'}and skills progression.
-          </Text>
+          <Text style={styles.description}>{t.loginDescription}</Text>
         </View>
 
         <View style={styles.spacer} />
@@ -58,14 +67,12 @@ export default function LoginScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.guestButtonGradient}
             >
-              <Text style={styles.guestButtonText}>Get Started</Text>
+              <Text style={styles.guestButtonText}>{t.getStarted}</Text>
               <ChevronRight size={20} color="#1A1A14" />
             </LinearGradient>
           </TouchableOpacity>
 
-          <Text style={styles.footerText}>
-            View any player's stats from tarkov.dev
-          </Text>
+          <Text style={styles.footerText}>{t.loginFooter}</Text>
         </View>
       </View>
     </View>
@@ -98,6 +105,27 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 32,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: 56,
+  },
+  langButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(217,191,115,0.15)',
+  },
+  langText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.gold,
   },
   spacer: {
     flex: 1,

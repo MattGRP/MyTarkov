@@ -6,15 +6,16 @@ import { Search, X, User, ChevronRight, UserX } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useLanguage } from '@/providers/LanguageProvider';
 import { searchPlayers } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
 
 export default function SetupScreen() {
-  const { savePlayer } = useAuth();
-  const [nameInput, setNameInput] = useState<string>('');
+  const { savePlayer, defaultSearchName, saveDefaultSearchName } = useAuth();
+  const { t } = useLanguage();
+  const [nameInput, setNameInput] = useState<string>(defaultSearchName);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const searchMutation = useMutation({
     mutationFn: async (query: string) => {
@@ -31,8 +32,9 @@ export default function SetupScreen() {
     const query = nameInput.trim();
     if (!query) return;
     Keyboard.dismiss();
+    saveDefaultSearchName(query);
     searchMutation.mutate(query);
-  }, [nameInput, searchMutation]);
+  }, [nameInput, searchMutation, saveDefaultSearchName]);
 
   const handleSelectPlayer = useCallback(async (result: SearchResult) => {
     console.log('[Setup] Selected player:', result.name, result.id);
@@ -76,10 +78,8 @@ export default function SetupScreen() {
           <View style={styles.iconWrap}>
             <User size={36} color={Colors.gold} strokeWidth={1.5} />
           </View>
-          <Text style={styles.title}>Link Your Player</Text>
-          <Text style={styles.subtitle}>
-            Search your Tarkov player name to link{'\n'}your profile for quick access.
-          </Text>
+          <Text style={styles.title}>{t.setupTitle}</Text>
+          <Text style={styles.subtitle}>{t.setupSubtitle}</Text>
         </View>
 
         <View style={styles.searchSection}>
@@ -88,7 +88,7 @@ export default function SetupScreen() {
               <Search size={18} color={Colors.textSecondary} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Your Tarkov player name"
+                placeholder={t.setupPlaceholder}
                 placeholderTextColor={Colors.textTertiary}
                 value={nameInput}
                 onChangeText={setNameInput}
@@ -116,7 +116,7 @@ export default function SetupScreen() {
             {searchMutation.isPending ? (
               <ActivityIndicator color="#1A1A14" size="small" />
             ) : (
-              <Text style={styles.searchButtonText}>Search</Text>
+              <Text style={styles.searchButtonText}>{t.setupSearchButton}</Text>
             )}
           </TouchableOpacity>
 
@@ -128,13 +128,13 @@ export default function SetupScreen() {
         {hasSearched && results.length === 0 && !searchMutation.isPending && (
           <View style={styles.emptyState}>
             <UserX size={32} color={Colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No players found</Text>
+            <Text style={styles.emptyTitle}>{t.setupNoPlayers}</Text>
           </View>
         )}
 
         {results.length > 0 && (
           <View style={styles.resultsSection}>
-            <Text style={styles.resultsLabel}>Select your player</Text>
+            <Text style={styles.resultsLabel}>{t.setupSelectPlayer}</Text>
             <View style={styles.resultsCard}>
               <FlatList
                 data={results}

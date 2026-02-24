@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Star } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useLanguage } from '@/providers/LanguageProvider';
 import { SkillEntry } from '@/types/tarkov';
 import { formatSkillName, getSkillColor } from '@/utils/helpers';
 
@@ -34,13 +35,15 @@ function SkillRow({ skill, isLast }: { skill: SkillEntry; isLast: boolean }) {
 }
 
 export default React.memo(function SkillsSection({ skills }: SkillsSectionProps) {
+  const { t } = useLanguage();
+
   if (skills.length === 0) return null;
 
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
         <Star size={18} color={Colors.gold} />
-        <Text style={styles.sectionTitle}>Skills</Text>
+        <Text style={styles.sectionTitle}>{t.skills}</Text>
       </View>
       <View style={styles.card}>
         {skills.map((skill, idx) => (

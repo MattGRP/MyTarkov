@@ -6,26 +6,30 @@ import createContextHook from '@nkzw/create-context-hook';
 const PLAYER_NAME_KEY = 'tarkov_player_name';
 const PLAYER_ACCOUNT_ID_KEY = 'tarkov_player_account_id';
 const IS_SIGNED_IN_KEY = 'tarkov_signed_in';
+const DEFAULT_SEARCH_NAME_KEY = 'tarkov_default_search_name';
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isSignedIn, setIsSignedIn] = useState<boolean>(false);
   const [playerName, setPlayerName] = useState<string | null>(null);
   const [playerAccountId, setPlayerAccountId] = useState<string | null>(null);
+  const [defaultSearchName, setDefaultSearchName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const storedAuthQuery = useQuery({
     queryKey: ['auth-stored'],
     queryFn: async () => {
       console.log('[Auth] Loading stored auth...');
-      const [signedIn, name, accountId] = await Promise.all([
+      const [signedIn, name, accountId, defaultName] = await Promise.all([
         AsyncStorage.getItem(IS_SIGNED_IN_KEY),
         AsyncStorage.getItem(PLAYER_NAME_KEY),
         AsyncStorage.getItem(PLAYER_ACCOUNT_ID_KEY),
+        AsyncStorage.getItem(DEFAULT_SEARCH_NAME_KEY),
       ]);
       return {
         isSignedIn: signedIn === 'true',
         playerName: name,
         playerAccountId: accountId,
+        defaultSearchName: defaultName ?? '',
       };
     },
     staleTime: Infinity,
@@ -37,6 +41,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setIsSignedIn(storedAuthQuery.data.isSignedIn);
       setPlayerName(storedAuthQuery.data.playerName);
       setPlayerAccountId(storedAuthQuery.data.playerAccountId);
+      setDefaultSearchName(storedAuthQuery.data.defaultSearchName);
       setIsLoading(false);
     }
   }, [storedAuthQuery.data]);
@@ -57,6 +62,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setPlayerAccountId(accountId);
   }, []);
 
+  const saveDefaultSearchName = useCallback(async (name: string) => {
+    if (!defaultSearchName && name.trim()) {
+      console.log('[Auth] Saving default search name:', name);
+      await AsyncStorage.setItem(DEFAULT_SEARCH_NAME_KEY, name.trim());
+      setDefaultSearchName(name.trim());
+    }
+  }, [defaultSearchName]);
+
   const signOut = useCallback(async () => {
     console.log('[Auth] Signing out');
     await Promise.all([
@@ -73,9 +86,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isSignedIn,
     playerName,
     playerAccountId,
+    defaultSearchName,
     isLoading,
     continueAsGuest,
     savePlayer,
+    saveDefaultSearchName,
     signOut,
   };
 });

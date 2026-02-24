@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Crosshair, Heart, Flame, Map, BarChart3, PersonStanding, AlertTriangle } from 'lucide-react-native';
+import { Crosshair, Heart, Flame, Map, BarChart3, PersonStanding } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useLanguage } from '@/providers/LanguageProvider';
 import StatCard from '@/components/StatCard';
 import StatsRow from '@/components/StatsRow';
 import LoadoutSection from '@/components/LoadoutSection';
@@ -26,6 +27,7 @@ interface PlayerProfileViewProps {
 }
 
 export default function PlayerProfileView({ profile, isRefreshing, onRefresh, headerRight }: PlayerProfileViewProps) {
+  const { t } = useLanguage();
   const pmcStats = useMemo(() => calculatePlayerStats(profile.pmcStats), [profile.pmcStats]);
   const scavStats = useMemo(() => calculatePlayerStats(profile.scavStats), [profile.scavStats]);
   const level = useMemo(() => getLevel(profile.info.experience), [profile.info.experience]);
@@ -93,16 +95,16 @@ export default function PlayerProfileView({ profile, isRefreshing, onRefresh, he
           </View>
           <View style={styles.headerStatsRow}>
             <View style={styles.headerStat}>
-              <Text style={styles.headerStatLabel}>XP</Text>
+              <Text style={styles.headerStatLabel}>{t.xp}</Text>
               <Text style={styles.headerStatValue}>{formatNumber(profile.info.experience)}</Text>
             </View>
             <View style={styles.headerStat}>
-              <Text style={styles.headerStatLabel}>Account ID</Text>
+              <Text style={styles.headerStatLabel}>{t.accountId}</Text>
               <Text style={styles.headerStatValue}>{profile.aid}</Text>
             </View>
             {(profile.info.prestigeLevel ?? 0) > 0 && (
               <View style={styles.headerStat}>
-                <Text style={styles.headerStatLabel}>Prestige</Text>
+                <Text style={styles.headerStatLabel}>{t.prestige}</Text>
                 <Text style={styles.headerStatValue}>{profile.info.prestigeLevel}</Text>
               </View>
             )}
@@ -114,25 +116,25 @@ export default function PlayerProfileView({ profile, isRefreshing, onRefresh, he
         <View style={styles.statCardsRow}>
           <StatCard
             value={pmcStats.kd.toFixed(2)}
-            label="K/D"
+            label={t.kd}
             color={Colors.statRed}
             icon={<Crosshair size={16} color={Colors.statRed} />}
           />
           <StatCard
             value={`${pmcStats.survivalRate.toFixed(0)}%`}
-            label="Survival"
+            label={t.survival}
             color={Colors.statGreen}
             icon={<Heart size={16} color={Colors.statGreen} />}
           />
           <StatCard
             value={`${pmcStats.kills}`}
-            label="Kills"
+            label={t.kills}
             color={Colors.statOrange}
             icon={<Flame size={16} color={Colors.statOrange} />}
           />
           <StatCard
             value={`${pmcStats.sessions}`}
-            label="Raids"
+            label={t.raids}
             color={Colors.statBlue}
             icon={<Map size={16} color={Colors.statBlue} />}
           />
@@ -141,16 +143,16 @@ export default function PlayerProfileView({ profile, isRefreshing, onRefresh, he
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <BarChart3 size={18} color={Colors.gold} />
-            <Text style={styles.sectionTitle}>PMC Statistics</Text>
+            <Text style={styles.sectionTitle}>{t.pmcStats}</Text>
           </View>
           <View style={styles.sectionCard}>
-            <StatsRow label="Total Raids" value={`${pmcStats.sessions}`} />
-            <StatsRow label="Survived" value={`${pmcStats.survived}`} />
-            <StatsRow label="Kills" value={`${pmcStats.kills}`} />
-            <StatsRow label="Deaths" value={`${pmcStats.deaths}`} />
-            <StatsRow label="K/D Ratio" value={pmcStats.kd.toFixed(2)} />
-            <StatsRow label="Survival Rate" value={`${pmcStats.survivalRate.toFixed(1)}%`} />
-            <StatsRow label="Time in Raids" value={formatPlaytime(pmcStats.totalInGameTime)} isLast />
+            <StatsRow label={t.totalRaids} value={`${pmcStats.sessions}`} />
+            <StatsRow label={t.survived} value={`${pmcStats.survived}`} />
+            <StatsRow label={t.kills} value={`${pmcStats.kills}`} />
+            <StatsRow label={t.deaths} value={`${pmcStats.deaths}`} />
+            <StatsRow label={t.kdRatio} value={pmcStats.kd.toFixed(2)} />
+            <StatsRow label={t.survivalRate} value={`${pmcStats.survivalRate.toFixed(1)}%`} />
+            <StatsRow label={t.timeInRaids} value={formatPlaytime(pmcStats.totalInGameTime)} isLast />
           </View>
         </View>
 
@@ -158,14 +160,14 @@ export default function PlayerProfileView({ profile, isRefreshing, onRefresh, he
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <PersonStanding size={18} color={Colors.gold} />
-              <Text style={styles.sectionTitle}>Scav Statistics</Text>
+              <Text style={styles.sectionTitle}>{t.scavStats}</Text>
             </View>
             <View style={styles.sectionCard}>
-              <StatsRow label="Total Raids" value={`${scavStats.sessions}`} />
-              <StatsRow label="Survived" value={`${scavStats.survived}`} />
-              <StatsRow label="Kills" value={`${scavStats.kills}`} />
-              <StatsRow label="K/D Ratio" value={scavStats.kd.toFixed(2)} />
-              <StatsRow label="Survival Rate" value={`${scavStats.survivalRate.toFixed(1)}%`} isLast />
+              <StatsRow label={t.totalRaids} value={`${scavStats.sessions}`} />
+              <StatsRow label={t.survived} value={`${scavStats.survived}`} />
+              <StatsRow label={t.kills} value={`${scavStats.kills}`} />
+              <StatsRow label={t.kdRatio} value={scavStats.kd.toFixed(2)} />
+              <StatsRow label={t.survivalRate} value={`${scavStats.survivalRate.toFixed(1)}%`} isLast />
             </View>
           </View>
         )}

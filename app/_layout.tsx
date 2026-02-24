@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
+import { LanguageProvider } from '@/providers/LanguageProvider';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import Colors from '@/constants/colors';
 import { useRouter, useSegments } from 'expo-router';
@@ -71,11 +72,13 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <AuthProvider>
-          <AuthGate>
-            <RootLayoutNav />
-          </AuthGate>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <AuthGate>
+              <RootLayoutNav />
+            </AuthGate>
+          </AuthProvider>
+        </LanguageProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
