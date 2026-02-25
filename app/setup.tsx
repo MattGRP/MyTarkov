@@ -1,66 +1,76 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Keyboard } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack } from 'expo-router';
-import { Search, X, User, ChevronRight, UserX } from 'lucide-react-native';
-import { useMutation } from '@tanstack/react-query';
+import { ExternalLink, User } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-import { searchPlayers } from '@/services/tarkovApi';
-import { SearchResult } from '@/types/tarkov';
+import { useLanguage } from '@/providers/LanguageProvider';
+import { fetchPlayerProfile } from '@/services/tarkovApi';
 
 export default function SetupScreen() {
   const { savePlayer } = useAuth();
-  const [nameInput, setNameInput] = useState<string>('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [hasSearched, setHasSearched] = useState<boolean>(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { t } = useLanguage();
+  const [accountIdInput, setAccountIdInput] = useState<string>('');
+  const [isLinking, setIsLinking] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const searchMutation = useMutation({
-    mutationFn: async (query: string) => {
-      const res = await searchPlayers(query);
-      return res;
-    },
-    onSuccess: (data) => {
-      setResults(data);
-      setHasSearched(true);
-    },
-  });
-
-  const handleSearch = useCallback(() => {
-    const query = nameInput.trim();
-    if (!query) return;
-    Keyboard.dismiss();
-    searchMutation.mutate(query);
-  }, [nameInput, searchMutation]);
-
-  const handleSelectPlayer = useCallback(async (result: SearchResult) => {
-    console.log('[Setup] Selected player:', result.name, result.id);
-    await savePlayer(result.name, result.id);
-  }, [savePlayer]);
-
-  const handleClear = useCallback(() => {
-    setNameInput('');
-    setResults([]);
-    setHasSearched(false);
+  const extractAccountId = useCallback((value: string) => {
+    const match = value.match(/\/players\/(?:regular|pve)\/(\d+)/i);
+    return match?.[1] ?? '';
   }, []);
 
-  const renderResult = useCallback(({ item }: { item: SearchResult }) => (
-    <TouchableOpacity
-      style={styles.resultRow}
-      onPress={() => handleSelectPlayer(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.resultAvatar}>
-        <User size={16} color={Colors.gold} />
-      </View>
-      <View style={styles.resultInfo}>
-        <Text style={styles.resultName}>{item.name}</Text>
-        <Text style={styles.resultId}>ID: {item.id}</Text>
-      </View>
-      <ChevronRight size={16} color={Colors.textTertiary} />
-    </TouchableOpacity>
-  ), [handleSelectPlayer]);
+  const handleOpenPlayers = useCallback(async () => {
+    const url = 'https://tarkov.dev/players?gameMode=regular';
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch (error) {
+      console.log('[Setup] Failed to open browser:', error);
+      Linking.openURL(url).catch((linkError) => {
+        console.log('[Setup] Failed to open URL:', linkError);
+      });
+    }
+  }, []);
+
+  const handleLink = useCallback(async () => {
+    const trimmed = accountIdInput.trim();
+    if (!trimmed) return;
+    Keyboard.dismiss();
+
+    const extracted = extractAccountId(trimmed);
+    const accountId = extracted || trimmed;
+
+    if (!/^\d+$/.test(accountId)) {
+      setErrorMessage(t.setupInvalidAccountId);
+      return;
+    }
+
+    try {
+      setIsLinking(true);
+      setErrorMessage('');
+      const profile = await fetchPlayerProfile(accountId);
+      await savePlayer(profile.info.nickname, accountId);
+    } catch (error) {
+      setErrorMessage((error as Error).message);
+    } finally {
+      setIsLinking(false);
+    }
+  }, [accountIdInput, extractAccountId, savePlayer, t]);
+
+  const handleClear = useCallback(() => {
+    setAccountIdInput('');
+    setErrorMessage('');
+  }, []);
+
+  const handleAccountIdChange = useCallback((value: string) => {
+    const extracted = extractAccountId(value);
+    setAccountIdInput(extracted || value);
+    if (errorMessage) {
+      setErrorMessage('');
+    }
+  }, [errorMessage, extractAccountId]);
 
   return (
     <View style={styles.container}>
@@ -76,76 +86,60 @@ export default function SetupScreen() {
           <View style={styles.iconWrap}>
             <User size={36} color={Colors.gold} strokeWidth={1.5} />
           </View>
-          <Text style={styles.title}>Link Your Player</Text>
-          <Text style={styles.subtitle}>
-            Search your Tarkov player name to link{'\n'}your profile for quick access.
-          </Text>
+          <Text style={styles.title}>{t.setupTitle}</Text>
+          <Text style={styles.subtitle}>{t.setupSubtitle}</Text>
+          <TouchableOpacity style={styles.linkButton} onPress={handleOpenPlayers} activeOpacity={0.8}>
+            <ExternalLink size={16} color={Colors.textSecondary} />
+            <Text style={styles.linkText}>{t.setupOpenPlayers}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.searchSection}>
+          <Text style={styles.label}>{t.setupAccountIdLabel}</Text>
           <View style={styles.searchRow}>
             <View style={styles.searchInputWrap}>
-              <Search size={18} color={Colors.textSecondary} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Your Tarkov player name"
+                placeholder={t.setupAccountIdPlaceholder}
                 placeholderTextColor={Colors.textTertiary}
-                value={nameInput}
-                onChangeText={setNameInput}
+                value={accountIdInput}
+                onChangeText={handleAccountIdChange}
                 autoCapitalize="none"
                 autoCorrect={false}
-                returnKeyType="search"
-                onSubmitEditing={handleSearch}
-                testID="setup-search-input"
+                returnKeyType="done"
+                onSubmitEditing={handleLink}
+                testID="setup-accountid-input"
               />
-              {nameInput.length > 0 && (
+              {accountIdInput.length > 0 && (
                 <TouchableOpacity onPress={handleClear}>
-                  <X size={18} color={Colors.textTertiary} />
+                  <Text style={styles.clearText}>×</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
+          <Text style={styles.hint}>{t.setupAccountIdHint}</Text>
 
           <TouchableOpacity
-            style={[styles.searchButton, (!nameInput.trim() || searchMutation.isPending) && styles.searchButtonDisabled]}
-            onPress={handleSearch}
-            disabled={!nameInput.trim() || searchMutation.isPending}
+            style={[styles.searchButton, (!accountIdInput.trim() || isLinking) && styles.searchButtonDisabled]}
+            onPress={handleLink}
+            disabled={!accountIdInput.trim() || isLinking}
             activeOpacity={0.8}
-            testID="setup-search-button"
+            testID="setup-link-button"
           >
-            {searchMutation.isPending ? (
-              <ActivityIndicator color="#1A1A14" size="small" />
+            {isLinking ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#1A1A14" size="small" />
+                <Text style={styles.searchButtonText}>{t.setupFetchingProfile}</Text>
+              </View>
             ) : (
-              <Text style={styles.searchButtonText}>Search</Text>
+              <Text style={styles.searchButtonText}>{t.setupLinkButton}</Text>
             )}
           </TouchableOpacity>
 
-          {searchMutation.isError && (
-            <Text style={styles.errorText}>{(searchMutation.error as Error).message}</Text>
+          {!!errorMessage && (
+            <Text style={styles.errorText}>{errorMessage}</Text>
           )}
         </View>
-
-        {hasSearched && results.length === 0 && !searchMutation.isPending && (
-          <View style={styles.emptyState}>
-            <UserX size={32} color={Colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No players found</Text>
-          </View>
-        )}
-
-        {results.length > 0 && (
-          <View style={styles.resultsSection}>
-            <Text style={styles.resultsLabel}>Select your player</Text>
-            <View style={styles.resultsCard}>
-              <FlatList
-                data={results}
-                keyExtractor={(item) => item.id}
-                renderItem={renderResult}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-                keyboardShouldPersistTaps="handled"
-              />
-            </View>
-          </View>
-        )}
       </View>
     </View>
   );
@@ -186,9 +180,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  linkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  linkText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
   searchSection: {
     paddingHorizontal: 24,
     gap: 12,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   searchRow: {
     flexDirection: 'row',
@@ -212,6 +223,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     height: 48,
   },
+  clearText: {
+    fontSize: 18,
+    color: Colors.textTertiary,
+    paddingHorizontal: 4,
+  },
+  hint: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+  },
   searchButton: {
     backgroundColor: Colors.gold,
     borderRadius: 12,
@@ -227,69 +247,13 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: '#1A1A14',
   },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   errorText: {
     fontSize: 12,
     color: Colors.statRed,
-  },
-  emptyState: {
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 48,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    color: Colors.textTertiary,
-  },
-  resultsSection: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-  },
-  resultsLabel: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: Colors.textTertiary,
-    marginBottom: 10,
-  },
-  resultsCard: {
-    flex: 1,
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-  },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    gap: 14,
-  },
-  resultAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resultInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  resultName: {
-    fontSize: 15,
-    fontWeight: '500' as const,
-    color: '#FFFFFF',
-  },
-  resultId: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.border,
-    marginLeft: 66,
   },
 });

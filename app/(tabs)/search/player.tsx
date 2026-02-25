@@ -14,7 +14,10 @@ export default function PlayerDetailScreen() {
     queryKey: ['profile', accountId],
     queryFn: () => fetchPlayerProfile(accountId!),
     enabled: !!accountId,
-    staleTime: 60000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    gcTime: 0,
   });
 
   if (profileQuery.isLoading && !profileQuery.data) {

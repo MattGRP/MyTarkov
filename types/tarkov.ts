@@ -14,6 +14,7 @@ export interface PlayerInfo {
   nickname: string;
   side: string;
   experience: number;
+  level?: number;
   memberCategory?: number;
   selectedMemberCategory?: number;
   prestigeLevel?: number;
@@ -199,4 +200,28 @@ export function getLevel(experience: number): number {
     }
   }
   return lvl;
+}
+
+export interface PlayerLevelData {
+  level: number;
+  exp: number;
+  levelBadgeImageLink?: string;
+}
+
+export function getLevelFromPlayerLevels(experience: number, levels: PlayerLevelData[]): number {
+  if (!experience || levels.length === 0) return 1;
+  let expTotal = 0;
+  let level = 1;
+  for (let i = 0; i < levels.length; i++) {
+    expTotal += levels[i].exp;
+    if (expTotal === experience) {
+      level = levels[i].level;
+      break;
+    }
+    if (expTotal > experience) {
+      level = levels[Math.max(0, i - 1)].level;
+      break;
+    }
+  }
+  return level;
 }

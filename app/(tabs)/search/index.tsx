@@ -5,14 +5,18 @@ import { useRouter } from 'expo-router';
 import { Search, X, User, ChevronRight, UserX, Crosshair, BarChart3, Star } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
+import { useLanguage } from '@/providers/LanguageProvider';
 import { searchPlayers, isIndexCached, isIndexLoading, getIndexLoadProgress, preloadIndex } from '@/services/tarkovApi';
 import { SearchResult } from '@/types/tarkov';
+import { getPlayerNameValidationError } from '@/utils/helpers';
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [searchText, setSearchText] = useState<string>('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [validationError, setValidationError] = useState<string>('');
 
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [preloading, setPreloading] = useState<boolean>(!isIndexCached() && !isIndexLoading());
@@ -56,24 +60,47 @@ export default function SearchScreen() {
     },
   });
 
+  const { mutate: runSearch, reset: resetSearch, isPending, isError, error } = searchMutation;
+
   const handleSearch = useCallback(() => {
     const query = searchText.trim();
     if (!query) return;
     Keyboard.dismiss();
 
     if (/^\d+$/.test(query)) {
+      setValidationError('');
       router.push({ pathname: '/search/player' as never, params: { accountId: query } });
-    } else {
-      searchMutation.reset();
-      searchMutation.mutate(query);
+      return;
     }
-  }, [searchText, router, searchMutation.mutate, searchMutation.reset]);
+
+    const validationKey = getPlayerNameValidationError(query);
+    if (validationKey === 'chars') {
+      setValidationError(t.playerNameInvalidChars);
+      return;
+    }
+    if (validationKey === 'length') {
+      setValidationError(t.playerNameInvalidLength);
+      return;
+    }
+
+    setValidationError('');
+    resetSearch();
+    runSearch(query);
+  }, [searchText, router, resetSearch, runSearch, t]);
 
   const handleClear = useCallback(() => {
     setSearchText('');
     setResults([]);
     setHasSearched(false);
+    setValidationError('');
   }, []);
+
+  const handleSearchTextChange = useCallback((value: string) => {
+    setSearchText(value);
+    if (validationError) {
+      setValidationError('');
+    }
+  }, [validationError]);
 
   const handleSelectPlayer = useCallback((result: SearchResult) => {
     router.push({ pathname: '/search/player' as never, params: { accountId: result.id } });
@@ -109,8 +136,8 @@ export default function SearchScreen() {
           <Crosshair size={120} color="rgba(255,255,255,0.03)" strokeWidth={1} />
         </View>
         <View style={styles.headerContent}>
-          <Text style={styles.headerSubtitle}>ESCAPE FROM TARKOV</Text>
-          <Text style={styles.headerTitle}>Player Lookup</Text>
+          <Text style={styles.headerSubtitle}>{t.searchHeaderSubtitle}</Text>
+          <Text style={styles.headerTitle}>{t.searchHeaderTitle}</Text>
         </View>
       </View>
 
@@ -120,10 +147,10 @@ export default function SearchScreen() {
             <Search size={18} color={Colors.textSecondary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Player name or Account ID"
+              placeholder={t.searchPlaceholder}
               placeholderTextColor={Colors.textTertiary}
               value={searchText}
-              onChangeText={setSearchText}
+              onChangeText={handleSearchTextChange}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
@@ -141,34 +168,36 @@ export default function SearchScreen() {
           </TouchableOpacity>
         </View>
 
-        {searchMutation.isError && (
-          <Text style={styles.errorText}>{(searchMutation.error as Error).message}</Text>
+        {validationError ? (
+          <Text style={styles.errorText}>{validationError}</Text>
+        ) : isError && (
+          <Text style={styles.errorText}>{(error as Error).message}</Text>
         )}
       </View>
 
-      {searchMutation.isPending && (
+      {isPending && (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.gold} />
           {!isIndexCached() && (
             <View style={styles.loadingTextWrap}>
-              <Text style={styles.loadingTitle}>{loadingMessage || 'Downloading player database...'}</Text>
-              <Text style={styles.loadingSubtitle}>First search may take 10-30s due to database size (~66MB).{"\n"}Subsequent searches will be instant.</Text>
+              <Text style={styles.loadingTitle}>{loadingMessage || t.searchDownloading}</Text>
+              <Text style={styles.loadingSubtitle}>{t.searchDownloadingSub}</Text>
             </View>
           )}
         </View>
       )}
 
-      {hasSearched && results.length === 0 && !searchMutation.isPending && (
+      {hasSearched && results.length === 0 && !isPending && (
         <View style={styles.emptyState}>
           <UserX size={36} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No players found</Text>
-          <Text style={styles.emptySubtitle}>Try a different name or enter an Account ID directly</Text>
+          <Text style={styles.emptyTitle}>{t.searchNoPlayers}</Text>
+          <Text style={styles.emptySubtitle}>{t.searchNoPlayersSub}</Text>
         </View>
       )}
 
       {results.length > 0 && (
         <View style={styles.resultsSection}>
-          <Text style={styles.resultsCount}>{results.length} results</Text>
+          <Text style={styles.resultsCount}>{results.length} {t.searchResults}</Text>
           <FlatList
             data={results}
             keyExtractor={(item) => item.id}
@@ -181,39 +210,35 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {!hasSearched && !searchMutation.isPending && results.length === 0 && (
+      {!hasSearched && !isPending && results.length === 0 && (
         <View style={styles.placeholderSection}>
           {preloading && !isIndexCached() ? (
             <>
               <ActivityIndicator size="large" color={Colors.gold} />
-              <Text style={styles.placeholderTitle}>{loadingMessage || 'Loading player database...'}</Text>
-              <Text style={styles.placeholderSubtitle}>
-                Downloading ~66MB database in background.{'\n'}You can search once it finishes.
-              </Text>
+              <Text style={styles.placeholderTitle}>{loadingMessage || t.searchDownloading}</Text>
+              <Text style={styles.placeholderSubtitle}>{t.searchFirstTime}</Text>
             </>
           ) : (
             <>
               <Search size={44} color={Colors.goldDim} />
-              <Text style={styles.placeholderTitle}>Search for a player</Text>
+              <Text style={styles.placeholderTitle}>{t.searchForPlayer}</Text>
               <Text style={styles.placeholderSubtitle}>
-                {isIndexCached()
-                  ? 'Database loaded! Enter a player name to search.'
-                  : 'Enter a player name to search the database,\nor enter an Account ID to view directly.'}
+                {isIndexCached() ? t.searchDbLoaded : t.searchDbDefault}
               </Text>
             </>
           )}
           <View style={styles.hintRow}>
             <View style={styles.hintCard}>
               <Crosshair size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>K/D Ratio</Text>
+              <Text style={styles.hintLabel}>{t.hintKD}</Text>
             </View>
             <View style={styles.hintCard}>
               <BarChart3 size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>Survival Rate</Text>
+              <Text style={styles.hintLabel}>{t.hintSurvival}</Text>
             </View>
             <View style={styles.hintCard}>
               <Star size={20} color={Colors.goldDim} />
-              <Text style={styles.hintLabel}>Skills</Text>
+              <Text style={styles.hintLabel}>{t.hintSkills}</Text>
             </View>
           </View>
         </View>
@@ -404,11 +429,14 @@ const styles = StyleSheet.create({
   },
   hintRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 12,
     marginTop: 12,
   },
   hintCard: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: 96,
     backgroundColor: Colors.card,
     borderRadius: 12,
     borderWidth: 1,

@@ -53,3 +53,13 @@ export function getSkillColor(id: string): string {
       return '#D9BF73';
   }
 }
+
+export type PlayerNameValidationError = 'chars' | 'length' | null;
+
+export function getPlayerNameValidationError(name: string): PlayerNameValidationError {
+  const charactersValid = /^[a-zA-Z0-9-_]*$/.test(name);
+  if (!charactersValid) return 'chars';
+  const lengthValid = /^[a-zA-Z0-9-_]{3,15}$|^TarkovCitizen\d{1,10}$/i.test(name);
+  if (!lengthValid) return 'length';
+  return null;
+}

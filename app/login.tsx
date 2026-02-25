@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Crosshair, ChevronRight } from 'lucide-react-native';
 import { Stack } from 'expo-router';
@@ -64,7 +64,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <Text style={styles.footerText}>
-            View any player's stats from tarkov.dev
+            View any player&#39;s stats from tarkov.dev
           </Text>
         </View>
       </View>

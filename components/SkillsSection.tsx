@@ -1,15 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Star } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { SkillEntry } from '@/types/tarkov';
 import { formatSkillName, getSkillColor } from '@/utils/helpers';
+import { useLanguage } from '@/providers/LanguageProvider';
+import { fetchSkills } from '@/services/tarkovApi';
 
 interface SkillsSectionProps {
   skills: SkillEntry[];
 }
 
-function SkillRow({ skill, isLast }: { skill: SkillEntry; isLast: boolean }) {
+function SkillRow({ skill, isLast, skillName, levelLabel }: { skill: SkillEntry; isLast: boolean; skillName: string; levelLabel: string }) {
   const level = Math.floor(skill.Progress / 100);
   const progress = (skill.Progress % 100) / 100;
   const color = getSkillColor(skill.Id);
@@ -20,8 +23,8 @@ function SkillRow({ skill, isLast }: { skill: SkillEntry; isLast: boolean }) {
         <View style={[styles.skillDot, { backgroundColor: color }]} />
         <View style={styles.skillInfo}>
           <View style={styles.skillHeader}>
-            <Text style={styles.skillName}>{formatSkillName(skill.Id)}</Text>
-            <Text style={styles.skillLevel}>Lvl {level}</Text>
+            <Text style={styles.skillName}>{skillName}</Text>
+            <Text style={styles.skillLevel}>{levelLabel} {level}</Text>
           </View>
           <View style={styles.progressBarBg}>
             <View style={[styles.progressBarFill, { width: `${progress * 100}%`, backgroundColor: color }]} />
@@ -34,17 +37,39 @@ function SkillRow({ skill, isLast }: { skill: SkillEntry; isLast: boolean }) {
 }
 
 export default React.memo(function SkillsSection({ skills }: SkillsSectionProps) {
+  const { t, language } = useLanguage();
+
+  const skillsQuery = useQuery({
+    queryKey: ['skills', language],
+    queryFn: () => fetchSkills(language),
+    staleTime: 6 * 60 * 60 * 1000,
+  });
+
+  const skillNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const skill of skillsQuery.data ?? []) {
+      map[skill.id] = skill.name;
+    }
+    return map;
+  }, [skillsQuery.data]);
+
   if (skills.length === 0) return null;
 
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
         <Star size={18} color={Colors.gold} />
-        <Text style={styles.sectionTitle}>Skills</Text>
+        <Text style={styles.sectionTitle}>{t.skillsTitle}</Text>
       </View>
       <View style={styles.card}>
         {skills.map((skill, idx) => (
-          <SkillRow key={skill.Id} skill={skill} isLast={idx === skills.length - 1} />
+          <SkillRow
+            key={skill.Id}
+            skill={skill}
+            isLast={idx === skills.length - 1}
+            skillName={skillNameMap[skill.Id] ?? formatSkillName(skill.Id)}
+            levelLabel={t.level}
+          />
         ))}
       </View>
     </View>
