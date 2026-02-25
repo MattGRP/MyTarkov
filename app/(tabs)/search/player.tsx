@@ -4,11 +4,13 @@ import { useLocalSearchParams, Stack } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 
 export default function PlayerDetailScreen() {
   const { accountId } = useLocalSearchParams<{ accountId: string }>();
+  const { t } = useLanguage();
 
   const profileQuery = useQuery({
     queryKey: ['profile', accountId],
@@ -23,9 +25,9 @@ export default function PlayerDetailScreen() {
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
       <View style={styles.centerContainer}>
-        <Stack.Screen options={{ title: 'Player Profile' }} />
+        <Stack.Screen options={{ title: t.playerProfile }} />
         <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <Text style={styles.loadingText}>{t.loadingProfile}</Text>
       </View>
     );
   }
@@ -33,15 +35,15 @@ export default function PlayerDetailScreen() {
   if (profileQuery.isError && !profileQuery.data) {
     return (
       <View style={styles.centerContainer}>
-        <Stack.Screen options={{ title: 'Player Profile' }} />
+        <Stack.Screen options={{ title: t.playerProfile }} />
         <AlertTriangle size={44} color={Colors.statOrange} />
-        <Text style={styles.errorTitle}>Failed to load profile</Text>
+        <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
         <Text style={styles.errorMessage}>{(profileQuery.error as Error).message}</Text>
         <TouchableOpacity
           style={styles.retryButton}
           onPress={() => profileQuery.refetch()}
         >
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={styles.retryText}>{t.retry}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -50,7 +52,7 @@ export default function PlayerDetailScreen() {
   if (!profileQuery.data) {
     return (
       <View style={styles.centerContainer}>
-        <Stack.Screen options={{ title: 'Player Profile' }} />
+        <Stack.Screen options={{ title: t.playerProfile }} />
         <ActivityIndicator size="large" color={Colors.gold} />
       </View>
     );
