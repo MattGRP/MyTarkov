@@ -1,5 +1,6 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const { withRorkMetro } = require("@rork-ai/toolkit-sdk/metro");
+const path = require("path");
 
 const config = getDefaultConfig(__dirname);
 
@@ -15,6 +16,15 @@ rorkConfig.transformer = {
 // 修改 resolver
 rorkConfig.resolver = {
     ...rorkConfig.resolver,
+    extraNodeModules: {
+        ...(rorkConfig.resolver?.extraNodeModules || {}),
+        "react-native-draggable-flatlist": path.dirname(
+            require.resolve("react-native-draggable-flatlist/package.json")
+        ),
+        "react-native-reanimated": path.dirname(
+            require.resolve("react-native-reanimated/package.json")
+        ),
+    },
     assetExts: rorkConfig.resolver.assetExts.filter(ext => ext !== "svg"),
     sourceExts: [...rorkConfig.resolver.sourceExts, "svg"]
 };

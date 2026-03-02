@@ -10,6 +10,7 @@ import { fetchSkills } from '@/services/tarkovApi';
 
 interface SkillsSectionProps {
   skills: SkillEntry[];
+  showHeader?: boolean;
 }
 
 function SkillRow({ skill, isLast, skillName, levelLabel }: { skill: SkillEntry; isLast: boolean; skillName: string; levelLabel: string }) {
@@ -36,7 +37,7 @@ function SkillRow({ skill, isLast, skillName, levelLabel }: { skill: SkillEntry;
   );
 }
 
-export default React.memo(function SkillsSection({ skills }: SkillsSectionProps) {
+export default React.memo(function SkillsSection({ skills, showHeader = true }: SkillsSectionProps) {
   const { t, language } = useLanguage();
 
   const skillsQuery = useQuery({
@@ -57,10 +58,12 @@ export default React.memo(function SkillsSection({ skills }: SkillsSectionProps)
 
   return (
     <View style={styles.container}>
-      <View style={styles.sectionHeader}>
-        <Star size={18} color={Colors.gold} />
-        <Text style={styles.sectionTitle}>{t.skillsTitle}</Text>
-      </View>
+      {showHeader && (
+        <View style={styles.sectionHeader}>
+          <Star size={18} color={Colors.gold} />
+          <Text style={styles.sectionTitle}>{t.skillsTitle}</Text>
+        </View>
+      )}
       <View style={styles.card}>
         {skills.map((skill, idx) => (
           <SkillRow

@@ -1,16 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useLanguage } from '@/providers/LanguageProvider';
-import { fetchPlayerProfile } from '@/services/tarkovApi';
+import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 
 export default function PlayerDetailScreen() {
   const { accountId } = useLocalSearchParams<{ accountId: string }>();
   const { t } = useLanguage();
+  const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
     queryKey: ['profile', accountId],
@@ -21,6 +22,14 @@ export default function PlayerDetailScreen() {
     refetchOnWindowFocus: true,
     gcTime: 0,
   });
+
+  const handleRefresh = React.useCallback(async () => {
+    if (!accountId) return;
+    clearPlayerProfileCache(accountId);
+    const freshProfile = await fetchPlayerProfile(accountId, { force: true });
+    queryClient.setQueryData(['profile', accountId], freshProfile);
+    await queryClient.invalidateQueries({ queryKey: ['profile', accountId] });
+  }, [accountId, queryClient]);
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
@@ -41,7 +50,7 @@ export default function PlayerDetailScreen() {
         <Text style={styles.errorMessage}>{(profileQuery.error as Error).message}</Text>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={() => profileQuery.refetch()}
+          onPress={handleRefresh}
         >
           <Text style={styles.retryText}>{t.retry}</Text>
         </TouchableOpacity>

@@ -62,6 +62,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setPlayerAccountId(accountId);
   }, []);
 
+  const clearPlayer = useCallback(async () => {
+    console.log('[Auth] Clearing linked player');
+    await Promise.all([
+      AsyncStorage.removeItem(PLAYER_NAME_KEY),
+      AsyncStorage.removeItem(PLAYER_ACCOUNT_ID_KEY),
+    ]);
+    setPlayerName(null);
+    setPlayerAccountId(null);
+  }, []);
+
   const saveDefaultSearchName = useCallback(async (name: string) => {
     if (!defaultSearchName && name.trim()) {
       console.log('[Auth] Saving default search name:', name);
@@ -90,6 +100,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading,
     continueAsGuest,
     savePlayer,
+    clearPlayer,
     saveDefaultSearchName,
     signOut,
   };

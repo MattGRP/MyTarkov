@@ -7,6 +7,10 @@ export interface PlayerProfile {
   pmcStats?: GameStats;
   scavStats?: GameStats;
   achievements?: Record<string, number>;
+  favoriteItems?: string[];
+  hideout?: HideoutData;
+  hideoutAreaStashes?: HideoutAreaStash[];
+  items?: EquipmentItem[];
   updated?: number;
 }
 
@@ -86,6 +90,28 @@ export interface CounterItem {
   Value: number;
 }
 
+export interface HideoutData {
+  areas?: HideoutArea[];
+  Areas?: HideoutArea[];
+  [key: string]: unknown;
+}
+
+export interface HideoutArea {
+  type?: string | number;
+  areaType?: string | number;
+  level?: number;
+  Level?: number;
+  active?: boolean;
+  isActive?: boolean;
+}
+
+export interface HideoutAreaStash {
+  Id?: string;
+  id?: string;
+  level?: number;
+  Level?: number;
+}
+
 export interface PlayerStats {
   sessions: number;
   survived: number;
@@ -99,6 +125,238 @@ export interface PlayerStats {
 export interface SearchResult {
   id: string;
   name: string;
+}
+
+export interface ItemSearchResult {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  shortName?: string;
+  description?: string;
+  basePrice?: number | null;
+  avg24hPrice?: number | null;
+  lastLowPrice?: number | null;
+  changeLast48hPercent?: number | null;
+  iconLink?: string;
+  gridImageLink?: string;
+  baseImageLink?: string;
+  link?: string;
+  wikiLink?: string;
+  types?: string[];
+  category?: { name: string };
+}
+
+export interface ItemVendor {
+  id?: string;
+  name: string;
+  normalizedName?: string;
+  imageLink?: string;
+}
+
+export interface ItemPriceEntry {
+  price?: number;
+  priceRUB?: number;
+  currency?: string;
+  source?: string;
+  vendor?: ItemVendor | null;
+}
+
+export interface ItemHistoricalPrice {
+  price?: number | null;
+  priceMin?: number | null;
+  offerCount?: number | null;
+  offerCountMin?: number | null;
+  timestamp?: string | null;
+}
+
+export interface ItemDetail extends ItemSearchResult {
+  width?: number | null;
+  height?: number | null;
+  weight?: number | null;
+  accuracyModifier?: number | null;
+  recoilModifier?: number | null;
+  ergonomicsModifier?: number | null;
+  loudness?: number | null;
+  velocity?: number | null;
+  blocksHeadphones?: boolean | null;
+  fleaMarketFee?: number | null;
+  minLevelForFlea?: number | null;
+  lastOfferCount?: number | null;
+  low24hPrice?: number | null;
+  high24hPrice?: number | null;
+  changeLast48h?: number | null;
+  sellFor?: ItemPriceEntry[];
+  buyFor?: ItemPriceEntry[];
+  historicalPrices?: ItemHistoricalPrice[];
+}
+
+export interface TaskTraderRef {
+  id?: string;
+  name: string;
+  normalizedName?: string;
+  imageLink?: string;
+}
+
+export interface TraderLevel {
+  id: string;
+  level: number;
+  requiredPlayerLevel?: number | null;
+  requiredReputation?: number | null;
+  requiredCommerce?: number | null;
+  cashOffers?: TraderCashOffer[];
+  barters?: TraderBarterOffer[];
+}
+
+export interface TraderOfferItemRef {
+  id: string;
+  name: string;
+  shortName?: string;
+  iconLink?: string;
+  wikiLink?: string;
+  types?: string[];
+  category?: {
+    name: string;
+  };
+}
+
+export interface TraderContainedItem {
+  item: TraderOfferItemRef;
+  count?: number | null;
+  quantity?: number | null;
+}
+
+export interface TraderCashOffer {
+  id?: string | null;
+  item: TraderOfferItemRef;
+  minTraderLevel?: number | null;
+  price?: number | null;
+  currency?: string | null;
+  currencyItem?: TraderOfferItemRef | null;
+  priceRUB?: number | null;
+  taskUnlock?: TaskRef | null;
+  buyLimit?: number | null;
+}
+
+export interface TraderBarterOffer {
+  id: string;
+  level?: number | null;
+  taskUnlock?: TaskRef | null;
+  requiredItems?: TraderContainedItem[];
+  rewardItems?: TraderContainedItem[];
+  buyLimit?: number | null;
+}
+
+export interface TraderDetail {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  description?: string;
+  resetTime?: string | null;
+  imageLink?: string;
+  image4xLink?: string;
+  levels?: TraderLevel[];
+  cashOffers?: TraderCashOffer[];
+  barters?: TraderBarterOffer[];
+}
+
+export interface TaskMapRef {
+  id?: string;
+  name: string;
+  normalizedName?: string;
+}
+
+export interface TaskRef {
+  id: string;
+  name: string;
+  normalizedName?: string;
+}
+
+export interface TaskStatusRequirement {
+  task: TaskRef;
+  status: string[];
+}
+
+export interface TaskTraderRequirement {
+  trader: TaskTraderRef;
+  requirementType?: string | null;
+  compareMethod?: string | null;
+  value?: number | null;
+}
+
+export interface TaskObjectiveItemRef {
+  id: string;
+  name: string;
+  shortName?: string;
+  iconLink?: string;
+}
+
+export interface TaskObjectiveLite {
+  id: string;
+  type: string;
+  description: string;
+  optional: boolean;
+  __typename?: string;
+  count?: number | null;
+  maps?: TaskMapRef[];
+  item?: TaskObjectiveItemRef | null;
+  items?: TaskObjectiveItemRef[];
+  containsAll?: TaskObjectiveItemRef[];
+  markerItem?: TaskObjectiveItemRef | null;
+  useAny?: TaskObjectiveItemRef[];
+  usingWeapon?: TaskObjectiveItemRef[];
+  usingWeaponMods?: TaskObjectiveItemRef[];
+  wearing?: TaskObjectiveItemRef[];
+  notWearing?: TaskObjectiveItemRef[];
+  requiredKeys?: TaskObjectiveItemRef[];
+}
+
+export interface TaskRewardItem {
+  item?: {
+    id: string;
+    name: string;
+    shortName?: string;
+    iconLink?: string;
+  } | null;
+  count?: number | null;
+}
+
+export interface TaskTraderStanding {
+  trader?: TaskTraderRef | null;
+  standing?: number | null;
+}
+
+export interface TaskSkillReward {
+  name?: string | null;
+  level?: number | null;
+}
+
+export interface TaskRewardsLite {
+  items?: TaskRewardItem[];
+  traderStanding?: TaskTraderStanding[];
+  skillLevelReward?: TaskSkillReward[];
+}
+
+export interface TaskDetail {
+  id: string;
+  name: string;
+  normalizedName: string;
+  trader: TaskTraderRef;
+  map?: TaskMapRef | null;
+  experience: number;
+  wikiLink?: string | null;
+  taskImageLink?: string | null;
+  minPlayerLevel?: number | null;
+  taskRequirements?: TaskStatusRequirement[];
+  traderRequirements?: TaskTraderRequirement[];
+  restartable?: boolean | null;
+  objectives?: TaskObjectiveLite[];
+  failConditions?: TaskObjectiveLite[];
+  startRewards?: TaskRewardsLite | null;
+  finishRewards?: TaskRewardsLite | null;
+  failureOutcome?: TaskRewardsLite | null;
+  factionName?: string | null;
+  kappaRequired?: boolean | null;
+  lightkeeperRequired?: boolean | null;
 }
 
 export const MAIN_SLOTS = [
@@ -126,7 +384,63 @@ export function getItemImageURL(tpl: string): string {
   return `https://assets.tarkov.dev/${tpl}-icon.webp`;
 }
 
-export function getCharacterImageURL(profile: PlayerProfile): string {
+export function getCharacterImageURL(
+  profile: PlayerProfile,
+  options?: { compact?: boolean },
+): string {
+  const compact = options?.compact === true;
+  const equipmentItems = profile.equipment?.Items ?? [];
+  const equipmentRootId = profile.equipment?.Id ?? '';
+  const compactExcludedPrefixes = [
+    'soft_armor',
+    'front_plate',
+    'back_plate',
+    'collar',
+    'groin',
+    'pockets',
+    'helmet_top',
+    'helmet_back',
+    'patron_in_weapon',
+    'cartridges',
+  ];
+  const shouldExcludeCompactItem = (slotId?: string): boolean => {
+    const normalized = (slotId ?? '').trim().toLowerCase();
+    if (!normalized) return false;
+    return compactExcludedPrefixes.some((prefix) => normalized.startsWith(prefix));
+  };
+
+  const itemsToRender = compact
+    ? (() => {
+      const excludedIds = new Set<string>();
+      const compactItems: Array<Record<string, string>> = [];
+      for (const item of equipmentItems) {
+        if (
+          (item.parentId && excludedIds.has(item.parentId)) ||
+          shouldExcludeCompactItem(item.slotId)
+        ) {
+          excludedIds.add(item._id);
+          continue;
+        }
+        const dict: Record<string, string> = {
+          _id: item._id,
+          _tpl: item._tpl,
+        };
+        if (item.parentId) dict.parentId = item.parentId;
+        if (item.slotId) dict.slotId = item.slotId;
+        compactItems.push(dict);
+      }
+      return compactItems;
+    })()
+    : equipmentItems.map((item) => {
+      const dict: Record<string, string> = {
+        _id: item._id,
+        _tpl: item._tpl,
+      };
+      if (item.parentId) dict.parentId = item.parentId;
+      if (item.slotId) dict.slotId = item.slotId;
+      return dict;
+    });
+
   const dataObj = {
     aid: profile.aid,
     customization: {
@@ -136,16 +450,8 @@ export function getCharacterImageURL(profile: PlayerProfile): string {
       hands: profile.customization.hands ?? '',
     },
     equipment: {
-      Id: profile.equipment?.Id ?? '',
-      Items: (profile.equipment?.Items ?? []).map((item) => {
-        const dict: Record<string, string> = {
-          _id: item._id,
-          _tpl: item._tpl,
-        };
-        if (item.parentId) dict.parentId = item.parentId;
-        if (item.slotId) dict.slotId = item.slotId;
-        return dict;
-      }),
+      Id: equipmentRootId,
+      Items: itemsToRender,
     },
   };
   const jsonString = JSON.stringify(dataObj);

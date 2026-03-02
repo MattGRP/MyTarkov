@@ -40,6 +40,18 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="tasks"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="tasks/index"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

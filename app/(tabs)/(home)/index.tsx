@@ -1,18 +1,57 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, AlertTriangle } from 'lucide-react-native';
+import { RefreshCw, AlertTriangle } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
-import { fetchPlayerProfile } from '@/services/tarkovApi';
+import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
+import AccountBindingPanel from '@/components/AccountBindingPanel';
 
 export default function MyProfileScreen() {
-  const { playerAccountId, signOut } = useAuth();
+  const { playerAccountId } = useAuth();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const spinValue = useRef(new Animated.Value(0)).current;
+  const spinAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (isRefreshing) {
+      spinValue.setValue(0);
+      spinAnimRef.current = Animated.loop(
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      spinAnimRef.current.start();
+      return;
+    }
+    spinAnimRef.current?.stop();
+    spinValue.setValue(0);
+  }, [isRefreshing, spinValue]);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const profileQuery = useQuery({
     queryKey: ['profile', playerAccountId],
@@ -25,17 +64,40 @@ export default function MyProfileScreen() {
   });
 
   const handleRefresh = useCallback(async () => {
+    if (!playerAccountId) return;
     setIsRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['profile', playerAccountId] });
-    setIsRefreshing(false);
-  }, [queryClient, playerAccountId]);
+    try {
+      clearPlayerProfileCache(playerAccountId);
+      const freshProfile = await fetchPlayerProfile(playerAccountId, { force: true });
+      queryClient.setQueryData(['profile', playerAccountId], freshProfile);
+      await queryClient.invalidateQueries({ queryKey: ['profile', playerAccountId] });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [playerAccountId, queryClient]);
 
-  const handleSignOut = useCallback(() => {
-    Alert.alert(t.signOutConfirm, t.signOutConfirmMessage, [
-      { text: t.cancel, style: 'cancel' },
-      { text: t.signOut, style: 'destructive', onPress: signOut },
-    ]);
-  }, [signOut, t]);
+  if (!playerAccountId) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.unboundContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.unboundContent,
+            {
+              paddingTop: Math.max(insets.top + 16, 24),
+              paddingBottom: Math.max(insets.bottom + 24, 36),
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="always"
+        >
+          <AccountBindingPanel />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
@@ -70,15 +132,18 @@ export default function MyProfileScreen() {
   return (
     <PlayerProfileView
       profile={profileQuery.data}
-      isRefreshing={isRefreshing}
-      onRefresh={handleRefresh}
+      enableCollapsibleHeader
+      itemDetailPathname="/(tabs)/(home)/item/[id]"
       headerRight={
         <TouchableOpacity
           style={styles.settingsButton}
-          onPress={handleSignOut}
-          testID="sign-out-button"
+          onPress={handleRefresh}
+          testID="refresh-button"
+          activeOpacity={0.7}
         >
-          <LogOut size={20} color={Colors.gold} />
+          <Animated.View style={{ transform: [{ rotate: spin }] }}>
+            <RefreshCw size={20} color={Colors.gold} />
+          </Animated.View>
         </TouchableOpacity>
       }
     />
@@ -127,5 +192,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  unboundContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    paddingHorizontal: 16,
+  },
+  unboundContent: {
+    flexGrow: 1,
+    paddingHorizontal: 0,
+    alignItems: 'center',
   },
 });

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -7,14 +7,15 @@ import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { LanguageProvider } from '@/providers/LanguageProvider';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import Colors from '@/constants/colors';
-import { useRouter, useSegments } from 'expo-router';
+import PlayerSearchTokenBootstrap from '@/components/PlayerSearchTokenBootstrap';
+import TasksBootstrap from '@/components/TasksBootstrap';
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isSignedIn, playerAccountId, isLoading } = useAuth();
+  const { isLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
@@ -22,26 +23,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     const firstSegment = segments[0] as string | undefined;
-    const inAuthGroup = firstSegment === '(tabs)';
-    const inLogin = firstSegment === 'login';
-    const inSetup = firstSegment === 'setup';
+    const inTabs = firstSegment === '(tabs)';
 
-    console.log('[AuthGate] isSignedIn:', isSignedIn, 'playerAccountId:', playerAccountId, 'segments:', segments);
-
-    if (!isSignedIn) {
-      if (!inLogin) {
-        router.replace('/login' as never);
-      }
-    } else if (!playerAccountId) {
-      if (!inSetup) {
-        router.replace('/setup' as never);
-      }
-    } else {
-      if (!inAuthGroup) {
-        router.replace('/(tabs)/(home)' as never);
-      }
+    if (!inTabs) {
+      router.replace('/(tabs)/(home)' as never);
     }
-  }, [isSignedIn, playerAccountId, isLoading, segments, router]);
+  }, [isLoading, segments, router]);
 
   if (isLoading) {
     return (
@@ -58,8 +45,6 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: 'Back' }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="setup" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -74,6 +59,8 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <LanguageProvider>
           <AuthProvider>
+            <PlayerSearchTokenBootstrap />
+            <TasksBootstrap />
             <AuthGate>
               <RootLayoutNav />
             </AuthGate>

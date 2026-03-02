@@ -7,6 +7,31 @@ export function formatNumber(n: number): string {
   return `${n}`;
 }
 
+export function formatPrice(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  const rounded = Math.round(value);
+  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+export function formatCountdownToTimestamp(
+  value: string | number | Date | null | undefined,
+  nowMs: number = Date.now(),
+): string {
+  if (value === null || value === undefined) return '-';
+  const targetMs = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  if (!Number.isFinite(targetMs)) return '-';
+  const diffMs = Math.max(0, Math.floor(targetMs - nowMs));
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+}
+
 export function formatPlaytime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
