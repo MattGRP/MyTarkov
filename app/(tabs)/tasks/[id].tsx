@@ -74,6 +74,35 @@ function localizeTraderName(name: string, normalizedName: string | null | undefi
   return mapped?.[language] || name;
 }
 
+const OBJECTIVE_TYPE_TRANSLATIONS: Record<string, { en: string; zh: string; ru: string }> = {
+  buildweapon: { en: 'Build weapon', zh: '组装武器', ru: 'Собрать оружие' },
+  experience: { en: 'Gain experience', zh: '获取经验', ru: 'Получить опыт' },
+  extract: { en: 'Extract', zh: '成功撤离', ru: 'Эвакуироваться' },
+  finditem: { en: 'Find item', zh: '寻找物品', ru: 'Найти предмет' },
+  findquestitem: { en: 'Find quest item', zh: '寻找任务物品', ru: 'Найти квестовый предмет' },
+  giveitem: { en: 'Hand over item', zh: '上交物品', ru: 'Передать предмет' },
+  givequestitem: { en: 'Hand over quest item', zh: '上交任务物品', ru: 'Передать квестовый предмет' },
+  mark: { en: 'Mark target', zh: '标记目标', ru: 'Пометить цель' },
+  plantitem: { en: 'Plant item', zh: '放置物品', ru: 'Установить предмет' },
+  plantquestitem: { en: 'Plant quest item', zh: '放置任务物品', ru: 'Установить квестовый предмет' },
+  sellitem: { en: 'Sell item', zh: '出售物品', ru: 'Продать предмет' },
+  shoot: { en: 'Eliminate target', zh: '击杀目标', ru: 'Устранить цель' },
+  skill: { en: 'Skill requirement', zh: '技能达标', ru: 'Требование навыка' },
+  taskstatus: { en: 'Task status', zh: '任务状态', ru: 'Статус задания' },
+  traderlevel: { en: 'Trader level', zh: '商人等级', ru: 'Уровень торговца' },
+  traderstanding: { en: 'Trader standing', zh: '商人好感', ru: 'Репутация торговца' },
+  useitem: { en: 'Use item', zh: '使用物品', ru: 'Использовать предмет' },
+  visit: { en: 'Visit location', zh: '前往地点', ru: 'Посетить место' },
+};
+
+function localizeObjectiveType(type: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
+  const rawType = (type ?? '').trim();
+  if (!rawType) return '';
+  const normalized = rawType.replace(/[^a-z]/gi, '').toLowerCase();
+  const mapped = OBJECTIVE_TYPE_TRANSLATIONS[normalized];
+  return mapped?.[language] ?? rawType;
+}
+
 const WEAPON_PART_HINTS = [
   'receiver',
   'upper receiver',
@@ -280,14 +309,19 @@ function ObjectiveRow({
   isLast,
   showMoreLabel,
   showLessLabel,
+  optionalLabel,
+  language,
 }: {
   objective: TaskObjectiveLite;
   onOpenItem: (itemId: string) => void;
   isLast: boolean;
   showMoreLabel: string;
   showLessLabel: string;
+  optionalLabel: string;
+  language: 'en' | 'zh' | 'ru';
 }) {
   const objectiveItems = collectObjectiveItems(objective);
+  const objectiveTypeLabel = localizeObjectiveType(objective.type, language);
   const [expanded, setExpanded] = useState(false);
   const hasOverflow = objectiveItems.length > 3;
   const visibleItems = hasOverflow && !expanded ? objectiveItems.slice(0, 3) : objectiveItems;
@@ -295,7 +329,14 @@ function ObjectiveRow({
     <View style={styles.infoRowWrap}>
       <View style={styles.objectiveRow}>
         <Text style={styles.objectiveText}>{objective.description}</Text>
-        {objective.optional ? <Text style={styles.objectiveMeta}>({objective.type})</Text> : null}
+        <View style={styles.objectiveMetaRow}>
+          {objectiveTypeLabel ? (
+            <Text style={[styles.objectiveMetaTag, styles.objectiveTypeTag]}>{objectiveTypeLabel}</Text>
+          ) : null}
+          {objective.optional ? (
+            <Text style={[styles.objectiveMetaTag, styles.objectiveOptionalTag]}>{optionalLabel}</Text>
+          ) : null}
+        </View>
         {objectiveItems.length > 0 ? (
           <View style={styles.objectiveItemsWrap}>
             {visibleItems.map((item) => (
@@ -650,6 +691,8 @@ export default function TaskDetailScreen() {
                   onOpenItem={openItem}
                   showMoreLabel={t.taskObjectiveShowMore}
                   showLessLabel={t.taskObjectiveShowLess}
+                  optionalLabel={t.taskObjectiveOptional}
+                  language={language}
                   isLast={idx === (task.objectives?.length ?? 1) - 1}
                 />
               ))
@@ -691,6 +734,8 @@ export default function TaskDetailScreen() {
                   onOpenItem={openItem}
                   showMoreLabel={t.taskObjectiveShowMore}
                   showLessLabel={t.taskObjectiveShowLess}
+                  optionalLabel={t.taskObjectiveOptional}
+                  language={language}
                   isLast={idx === (task.failConditions?.length ?? 1) - 1}
                 />
               ))
@@ -1012,9 +1057,29 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     lineHeight: 20,
   },
-  objectiveMeta: {
-    color: Colors.textSecondary,
+  objectiveMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  objectiveMetaTag: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     fontSize: 11,
+    fontWeight: '600' as const,
+    overflow: 'hidden',
+  },
+  objectiveTypeTag: {
+    color: Colors.textSecondary,
+    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  objectiveOptionalTag: {
+    color: Colors.gold,
+    borderColor: 'rgba(217,191,115,0.45)',
+    backgroundColor: 'rgba(217,191,115,0.12)',
   },
   objectiveItemsWrap: {
     flexDirection: 'column',

@@ -8,7 +8,7 @@ import { AlertTriangle, Store } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchItemDetail, fetchTraders } from '@/services/tarkovApi';
-import { ItemPriceEntry } from '@/types/tarkov';
+import { ItemDetailProperties, ItemPriceEntry } from '@/types/tarkov';
 import { formatPrice } from '@/utils/helpers';
 import FullScreenImageModal from '@/components/FullScreenImageModal';
 
@@ -17,9 +17,24 @@ function renderPercent(value?: number | null): string {
   return `${value.toFixed(1)}%`;
 }
 
+function renderSmartPercent(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${normalized.toFixed(1)}%`;
+}
+
 function renderPlain(value?: number | null): string {
   if (value === undefined || value === null || Number.isNaN(value)) return '-';
   return String(value);
+}
+
+function normalizeTokenLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const withSpaces = trimmed
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ');
+  return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
 }
 
 function priceEntryLabel(item: ItemPriceEntry | undefined, fallback: string): string {
@@ -117,7 +132,7 @@ export default function ItemDetailScreen() {
 
   const data = itemQuery.data ?? null;
   const title = data?.name || t.itemDetailsTitle;
-  const detailImageUri = data?.gridImageLink || data?.baseImageLink || data?.iconLink || null;
+  const detailImageUri = data?.image512pxLink || data?.image8xLink || data?.inspectImageLink || data?.gridImageLink || data?.baseImageLink || data?.iconLink || null;
 
   const traderMap = useMemo(() => {
     const map = new Map<string, { id: string; normalizedName: string; name: string; imageLink?: string }>();
@@ -177,35 +192,136 @@ export default function ItemDetailScreen() {
 
   const attributeRows = useMemo(() => {
     if (!data) return [];
-    return [
-      { label: t.itemAttrWeight, value: renderPlain(data.weight) },
-      { label: t.itemAttrSize, value: data.width && data.height ? `${data.width}x${data.height}` : '-' },
-      { label: t.itemAttrErgo, value: renderPlain(data.ergonomicsModifier) },
-      { label: t.itemAttrRecoil, value: renderPlain(data.recoilModifier) },
-      { label: t.itemAttrAccuracy, value: renderPlain(data.accuracyModifier) },
-      { label: t.itemAttrLoudness, value: renderPlain(data.loudness) },
-      { label: t.itemAttrVelocity, value: renderPlain(data.velocity) },
-      { label: t.itemAttrBlocksHeadphones, value: data.blocksHeadphones === undefined || data.blocksHeadphones === null ? '-' : (data.blocksHeadphones ? t.yes : t.no) },
-      { label: t.itemAttrFleaFee, value: formatPrice(data.fleaMarketFee) },
-      { label: t.itemAttrMinFleaLevel, value: renderPlain(data.minLevelForFlea) },
-      { label: t.itemAttrOfferCount, value: renderPlain(data.lastOfferCount) },
-    ].filter((entry) => entry.value !== '-');
-  }, [
-    data,
-    t.itemAttrAccuracy,
-    t.itemAttrBlocksHeadphones,
-    t.itemAttrErgo,
-    t.itemAttrFleaFee,
-    t.itemAttrLoudness,
-    t.itemAttrMinFleaLevel,
-    t.itemAttrOfferCount,
-    t.itemAttrRecoil,
-    t.itemAttrSize,
-    t.itemAttrVelocity,
-    t.itemAttrWeight,
-    t.no,
-    t.yes,
-  ]);
+    const rows: Array<{ key: string; label: string; value: string }> = [];
+    const added = new Set<string>();
+    const itemPropertyLabels = t.itemPropertyLabels ?? {};
+
+    const labelFor = (key: string, fallback: string): string => itemPropertyLabels[key] || fallback;
+    const push = (key: string, label: string, value: string): void => {
+      if (!value || value === '-' || added.has(key)) return;
+      added.add(key);
+      rows.push({ key, label, value });
+    };
+    const renderBool = (value?: boolean | null): string => (
+      value === undefined || value === null ? '-' : (value ? t.yes : t.no)
+    );
+    const renderList = (value?: Array<string | null> | null): string => {
+      const values = (value ?? [])
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .map(normalizeTokenLabel);
+      return values.length > 0 ? values.join(', ') : '-';
+    };
+    const pushPlain = (key: string, value?: number | null, fallback?: string): void => {
+      push(key, labelFor(key, fallback || key), renderPlain(value));
+    };
+    const pushPercent = (key: string, value?: number | null, fallback?: string): void => {
+      push(key, labelFor(key, fallback || key), renderSmartPercent(value));
+    };
+    const pushBool = (key: string, value?: boolean | null, fallback?: string): void => {
+      push(key, labelFor(key, fallback || key), renderBool(value));
+    };
+    const pushList = (key: string, value?: Array<string | null> | null, fallback?: string): void => {
+      push(key, labelFor(key, fallback || key), renderList(value));
+    };
+    const pushText = (key: string, value?: string | null, fallback?: string): void => {
+      const normalized = String(value || '').trim();
+      push(key, labelFor(key, fallback || key), normalized || '-');
+    };
+
+    const typeValue = (data.types ?? [])
+      .map((type) => String(type || '').trim())
+      .filter(Boolean)
+      .map((type) => t.itemTypeLabels[type] || t.itemTypeLabels[type.toLowerCase()] || normalizeTokenLabel(type))
+      .join(' / ');
+
+    push('types', labelFor('types', t.searchFilterType), typeValue || '-');
+    push('weight', t.itemAttrWeight, renderPlain(data.weight));
+    push('size', t.itemAttrSize, data.width && data.height ? `${data.width}x${data.height}` : '-');
+    push('ergonomicsModifier', t.itemAttrErgo, renderPlain(data.ergonomicsModifier));
+    push('recoilModifier', t.itemAttrRecoil, renderPlain(data.recoilModifier));
+    push('accuracyModifier', t.itemAttrAccuracy, renderPlain(data.accuracyModifier));
+    push('loudness', t.itemAttrLoudness, renderPlain(data.loudness));
+    push('velocity', t.itemAttrVelocity, renderPlain(data.velocity));
+    push('blocksHeadphones', t.itemAttrBlocksHeadphones, renderBool(data.blocksHeadphones));
+    push('fleaMarketFee', t.itemAttrFleaFee, formatPrice(data.fleaMarketFee));
+    push('minLevelForFlea', t.itemAttrMinFleaLevel, renderPlain(data.minLevelForFlea));
+    push('lastOfferCount', t.itemAttrOfferCount, renderPlain(data.lastOfferCount));
+
+    const properties = data.properties as ItemDetailProperties | null | undefined;
+    if (properties) {
+      pushText('caliber', properties.caliber);
+      pushPlain('stackMaxSize', properties.stackMaxSize);
+      pushBool('tracer', properties.tracer);
+      pushText('ammoType', properties.ammoType);
+      pushPlain('projectileCount', properties.projectileCount);
+      pushPlain('damage', properties.damage);
+      pushPlain('armorDamage', properties.armorDamage);
+      pushPlain('penetrationPower', properties.penetrationPower);
+      pushPercent('penetrationChance', properties.penetrationChance);
+      pushPercent('fragmentationChance', properties.fragmentationChance);
+      pushPercent('ricochetChance', properties.ricochetChance);
+      pushPercent('penetrationPowerDeviation', properties.penetrationPowerDeviation);
+      pushPlain('initialSpeed', properties.initialSpeed);
+      pushPercent('lightBleedModifier', properties.lightBleedModifier);
+      pushPercent('heavyBleedModifier', properties.heavyBleedModifier);
+      pushPercent('durabilityBurnFactor', properties.durabilityBurnFactor);
+      pushPercent('heatFactor', properties.heatFactor);
+      pushPercent('staminaBurnPerDamage', properties.staminaBurnPerDamage);
+      pushPercent('misfireChance', properties.misfireChance);
+      pushPercent('failureToFeedChance', properties.failureToFeedChance);
+
+      pushPlain('class', properties.class);
+      pushPlain('durability', properties.durability);
+      pushPlain('maxDurability', properties.maxDurability);
+      pushText('armorType', properties.armorType);
+      pushList('armorZones', properties.zones);
+      pushList('headZones', properties.headZones);
+      pushPlain('capacity', properties.capacity);
+      pushPlain('uses', properties.uses);
+      pushPlain('useTime', properties.useTime);
+      pushList('cures', properties.cures);
+      pushPlain('hitpoints', properties.hitpoints);
+      pushPlain('maxHealPerUse', properties.maxHealPerUse);
+      pushPlain('hpCostLightBleeding', properties.hpCostLightBleeding);
+      pushPlain('hpCostHeavyBleeding', properties.hpCostHeavyBleeding);
+      pushPlain('painkillerDuration', properties.painkillerDuration);
+      pushPlain('energyImpact', properties.energyImpact);
+      pushPlain('hydrationImpact', properties.hydrationImpact);
+      pushPlain('minLimbHealth', properties.minLimbHealth);
+      pushPlain('maxLimbHealth', properties.maxLimbHealth);
+      pushPlain('energy', properties.energy);
+      pushPlain('hydration', properties.hydration);
+      pushPlain('units', properties.units);
+      pushList('fireModes', properties.fireModes);
+      pushPlain('fireRate', properties.fireRate);
+      pushPlain('effectiveDistance', properties.effectiveDistance);
+      pushPlain('recoilVertical', properties.recoilVertical);
+      pushPlain('recoilHorizontal', properties.recoilHorizontal);
+      pushPlain('sightingRange', properties.sightingRange);
+
+      pushPlain('repairCost', properties.repairCost);
+      pushPercent('speedPenalty', properties.speedPenalty);
+      pushPercent('turnPenalty', properties.turnPenalty);
+      pushPercent('ergoPenalty', properties.ergoPenalty);
+      pushPercent('bluntThroughput', properties.bluntThroughput);
+      pushPercent('blindnessProtection', properties.blindnessProtection);
+      pushBool('blocksHeadset', properties.blocksHeadset);
+      pushText('deafening', properties.deafening);
+      pushPercent('loadModifier', properties.loadModifier);
+      pushPercent('ammoCheckModifier', properties.ammoCheckModifier);
+      pushPercent('malfunctionChance', properties.malfunctionChance);
+
+      pushText('grenadeType', properties.type);
+      pushPlain('fuse', properties.fuse);
+      pushPlain('minExplosionDistance', properties.minExplosionDistance);
+      pushPlain('maxExplosionDistance', properties.maxExplosionDistance);
+      pushPlain('fragments', properties.fragments);
+      pushPlain('contusionRadius', properties.contusionRadius);
+    }
+
+    return rows.map((row) => ({ label: row.label, value: row.value }));
+  }, [data, t]);
 
   const historyChartPoints = useMemo(() => {
     if (!data?.historicalPrices?.length) return [];

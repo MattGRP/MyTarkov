@@ -916,6 +916,9 @@ export async function fetchItemDetail(id: string, language: Language = 'en'): Pr
       iconLink
       gridImageLink
       baseImageLink
+      inspectImageLink
+      image512pxLink
+      image8xLink
       types
       width
       height
@@ -932,6 +935,157 @@ export async function fetchItemDetail(id: string, language: Language = 'en'): Pr
       low24hPrice
       high24hPrice
       changeLast48h
+      properties {
+        __typename
+        ... on ItemPropertiesAmmo {
+          caliber
+          stackMaxSize
+          tracer
+          ammoType
+          projectileCount
+          damage
+          armorDamage
+          fragmentationChance
+          ricochetChance
+          penetrationChance
+          penetrationPower
+          penetrationPowerDeviation
+          initialSpeed
+          lightBleedModifier
+          heavyBleedModifier
+          durabilityBurnFactor
+          heatFactor
+          staminaBurnPerDamage
+          misfireChance
+          failureToFeedChance
+        }
+        ... on ItemPropertiesArmor {
+          class
+          durability
+          repairCost
+          speedPenalty
+          turnPenalty
+          ergoPenalty
+          zones
+          armorType
+          bluntThroughput
+        }
+        ... on ItemPropertiesArmorAttachment {
+          class
+          durability
+          repairCost
+          speedPenalty
+          turnPenalty
+          ergoPenalty
+          zones
+          armorType
+          blindnessProtection
+          bluntThroughput
+        }
+        ... on ItemPropertiesBackpack {
+          capacity
+          speedPenalty
+          turnPenalty
+          ergoPenalty
+        }
+        ... on ItemPropertiesChestRig {
+          class
+          durability
+          repairCost
+          speedPenalty
+          turnPenalty
+          ergoPenalty
+          capacity
+          armorType
+          bluntThroughput
+          zones
+        }
+        ... on ItemPropertiesContainer {
+          capacity
+        }
+        ... on ItemPropertiesFoodDrink {
+          energy
+          hydration
+          units
+        }
+        ... on ItemPropertiesGrenade {
+          type
+          fuse
+          minExplosionDistance
+          maxExplosionDistance
+          fragments
+          contusionRadius
+        }
+        ... on ItemPropertiesHelmet {
+          class
+          durability
+          repairCost
+          speedPenalty
+          turnPenalty
+          ergoPenalty
+          headZones
+          deafening
+          blocksHeadset
+          blindnessProtection
+          armorType
+          bluntThroughput
+        }
+        ... on ItemPropertiesKey {
+          uses
+        }
+        ... on ItemPropertiesMagazine {
+          capacity
+          loadModifier
+          ammoCheckModifier
+          malfunctionChance
+        }
+        ... on ItemPropertiesMedicalItem {
+          uses
+          useTime
+          cures
+        }
+        ... on ItemPropertiesMedKit {
+          hitpoints
+          useTime
+          maxHealPerUse
+          cures
+          hpCostLightBleeding
+          hpCostHeavyBleeding
+        }
+        ... on ItemPropertiesPainkiller {
+          uses
+          useTime
+          cures
+          painkillerDuration
+          energyImpact
+          hydrationImpact
+        }
+        ... on ItemPropertiesResource {
+          units
+        }
+        ... on ItemPropertiesSurgicalKit {
+          uses
+          useTime
+          cures
+          minLimbHealth
+          maxLimbHealth
+        }
+        ... on ItemPropertiesStim {
+          useTime
+          cures
+        }
+        ... on ItemPropertiesWeapon {
+          caliber
+          effectiveDistance
+          fireModes
+          fireRate
+          maxDurability
+          recoilVertical
+          recoilHorizontal
+          repairCost
+          sightingRange
+        }
+      }
       category { name }
       sellFor {
         price
@@ -944,6 +1098,7 @@ export async function fetchItemDetail(id: string, language: Language = 'en'): Pr
         price
         priceRUB
         currency
+        source
         vendor { name normalizedName }
       }
       historicalPrices {

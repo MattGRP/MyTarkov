@@ -169,7 +169,79 @@ export interface ItemHistoricalPrice {
   timestamp?: string | null;
 }
 
+export interface ItemDetailProperties {
+  __typename?: string;
+  caliber?: string | null;
+  stackMaxSize?: number | null;
+  tracer?: boolean | null;
+  ammoType?: string | null;
+  projectileCount?: number | null;
+  damage?: number | null;
+  armorDamage?: number | null;
+  fragmentationChance?: number | null;
+  ricochetChance?: number | null;
+  penetrationChance?: number | null;
+  penetrationPower?: number | null;
+  penetrationPowerDeviation?: number | null;
+  initialSpeed?: number | null;
+  lightBleedModifier?: number | null;
+  heavyBleedModifier?: number | null;
+  durabilityBurnFactor?: number | null;
+  heatFactor?: number | null;
+  staminaBurnPerDamage?: number | null;
+  misfireChance?: number | null;
+  failureToFeedChance?: number | null;
+  class?: number | null;
+  durability?: number | null;
+  repairCost?: number | null;
+  speedPenalty?: number | null;
+  turnPenalty?: number | null;
+  ergoPenalty?: number | null;
+  zones?: string[] | null;
+  headZones?: string[] | null;
+  armorType?: string | null;
+  bluntThroughput?: number | null;
+  blindnessProtection?: number | null;
+  deafening?: string | null;
+  blocksHeadset?: boolean | null;
+  capacity?: number | null;
+  loadModifier?: number | null;
+  ammoCheckModifier?: number | null;
+  malfunctionChance?: number | null;
+  energy?: number | null;
+  hydration?: number | null;
+  units?: number | null;
+  type?: string | null;
+  fuse?: number | null;
+  minExplosionDistance?: number | null;
+  maxExplosionDistance?: number | null;
+  fragments?: number | null;
+  contusionRadius?: number | null;
+  uses?: number | null;
+  useTime?: number | null;
+  cures?: string[] | null;
+  hitpoints?: number | null;
+  maxHealPerUse?: number | null;
+  hpCostLightBleeding?: number | null;
+  hpCostHeavyBleeding?: number | null;
+  painkillerDuration?: number | null;
+  energyImpact?: number | null;
+  hydrationImpact?: number | null;
+  minLimbHealth?: number | null;
+  maxLimbHealth?: number | null;
+  effectiveDistance?: number | null;
+  fireModes?: string[] | null;
+  fireRate?: number | null;
+  maxDurability?: number | null;
+  recoilVertical?: number | null;
+  recoilHorizontal?: number | null;
+  sightingRange?: number | null;
+}
+
 export interface ItemDetail extends ItemSearchResult {
+  inspectImageLink?: string;
+  image512pxLink?: string;
+  image8xLink?: string;
   width?: number | null;
   height?: number | null;
   weight?: number | null;
@@ -188,6 +260,7 @@ export interface ItemDetail extends ItemSearchResult {
   sellFor?: ItemPriceEntry[];
   buyFor?: ItemPriceEntry[];
   historicalPrices?: ItemHistoricalPrice[];
+  properties?: ItemDetailProperties | null;
 }
 
 export interface TaskTraderRef {
