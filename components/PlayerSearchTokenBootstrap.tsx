@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import TurnstileTokenModal from '@/components/TurnstileTokenModal';
+import { useGameMode } from '@/providers/GameModeProvider';
 import {
   getPlayerSearchToken,
   getPlayerSearchTokenUpdatedAt,
@@ -21,6 +22,7 @@ export default function PlayerSearchTokenBootstrap() {
     return null;
   }
 
+  const { gameMode } = useGameMode();
   const [visible, setVisible] = useState(false);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -58,6 +60,7 @@ export default function PlayerSearchTokenBootstrap() {
 
   const startRefresh = useCallback((reason: RefreshReason, force = false) => {
     if (Platform.OS !== 'ios') return;
+    if (gameMode !== 'pve') return;
     if (appStateRef.current !== 'active') return;
     if (isRefreshingRef.current) return;
     const now = Date.now();
@@ -67,7 +70,7 @@ export default function PlayerSearchTokenBootstrap() {
     setVisible(true);
     isRefreshingRef.current = true;
     lastRefreshStartAtRef.current = now;
-  }, [clearRetryTimer]);
+  }, [clearRetryTimer, gameMode]);
 
   const finishRefresh = useCallback(() => {
     logInfo('TokenBootstrap', 'Token refresh finished');
@@ -79,10 +82,10 @@ export default function PlayerSearchTokenBootstrap() {
     await savePlayerSearchToken(token);
     logInfo('TokenBootstrap', 'Token captured and saved', { length: token.length });
     retryAttemptRef.current = 0;
-    void warmupPlayerSearch(true);
+    void warmupPlayerSearch(true, { gameMode });
     lastRefreshSuccessAtRef.current = Date.now();
     finishRefresh();
-  }, [finishRefresh]);
+  }, [finishRefresh, gameMode]);
 
   const handleTokenError = useCallback(async () => {
     logWarn('TokenBootstrap', 'Token refresh error');
@@ -96,6 +99,7 @@ export default function PlayerSearchTokenBootstrap() {
   }, [finishRefresh, scheduleRetry]);
 
   const startRefreshIfMissingToken = useCallback(async (reason: RefreshReason, force = false) => {
+    if (gameMode !== 'pve') return;
     const token = await getPlayerSearchToken();
     if (token) {
       retryAttemptRef.current = 0;
@@ -105,10 +109,17 @@ export default function PlayerSearchTokenBootstrap() {
       return;
     }
     startRefresh(reason, force);
-  }, [startRefresh]);
+  }, [gameMode, startRefresh]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
+    if (gameMode !== 'pve') {
+      clearRetryTimer();
+      retryAttemptRef.current = 0;
+      isRefreshingRef.current = false;
+      setVisible(false);
+      return;
+    }
 
     let mounted = true;
 
@@ -130,7 +141,7 @@ export default function PlayerSearchTokenBootstrap() {
         logInfo('TokenBootstrap', 'Token already available on startup', {
           updatedAt: updatedAt ?? null,
         });
-        void warmupPlayerSearch(true);
+        void warmupPlayerSearch(true, { gameMode });
       }
     })();
 
@@ -153,7 +164,11 @@ export default function PlayerSearchTokenBootstrap() {
       clearInterval(interval);
       appStateSub.remove();
     };
-  }, [clearRetryTimer, startRefreshIfMissingToken]);
+  }, [clearRetryTimer, gameMode, startRefreshIfMissingToken]);
+
+  if (gameMode !== 'pve') {
+    return null;
+  }
 
   return (
     <TurnstileTokenModal
@@ -162,6 +177,7 @@ export default function PlayerSearchTokenBootstrap() {
       onTokenCaptured={handleTokenCaptured}
       onError={handleTokenError}
       searchName="player"
+      gameMode={gameMode}
       silent
       timeoutMs={60_000}
     />

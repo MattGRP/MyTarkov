@@ -16,7 +16,8 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ChevronRight, Search, Filter } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/colors';
+import Colors, { alphaBlack, alphaWhite, getModeAccentTheme } from '@/constants/colors';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
 import { fetchTaskSummaries } from '@/services/tarkovApi';
@@ -50,6 +51,7 @@ function getFactionLabel(factionName: string | null | undefined, anyLabel: strin
 
 export default function TasksScreen() {
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [headerHeight, setHeaderHeight] = useState<number>(() => getPageHeaderEstimatedHeight(insets.top, true));
@@ -66,14 +68,40 @@ export default function TasksScreen() {
   const [only3x4Required, setOnly3x4Required] = useState(false);
   const [onlyLightkeeperRequired, setOnlyLightkeeperRequired] = useState(false);
   const [visibleTaskCount, setVisibleTaskCount] = useState<number>(TASK_LIST_PAGE_SIZE);
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const themeStyles = useMemo(() => ({
+    badgeGold: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    badgeGoldText: {
+      color: accentTheme.accent,
+    },
+    quickToggleChipActive: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    filterChipActive: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    modalActionPrimary: {
+      backgroundColor: accentTheme.accent,
+      borderColor: accentTheme.accent,
+    },
+    modalActionPrimaryText: {
+      color: accentTheme.accentTextOnSolid,
+    },
+  }), [accentTheme]);
 
   const tasksQuery = useInfiniteQuery({
-    queryKey: ['tasks-paged', language],
+    queryKey: ['tasks-paged', language, gameMode],
     initialPageParam: 0,
     queryFn: ({ signal, pageParam }) => fetchTaskSummaries(language, {
       signal,
       limit: TASK_FETCH_PAGE_SIZE,
       offset: pageParam,
+      gameMode,
     }),
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < TASK_FETCH_PAGE_SIZE) return undefined;
@@ -297,8 +325,8 @@ export default function TasksScreen() {
               <Text style={styles.badgeText}>{getTaskXp(item)}</Text>
             </View>
             {item.kappaRequired ? (
-              <View style={[styles.badge, styles.badgeGold]}>
-                <Text style={[styles.badgeText, styles.badgeGoldText]}>{t.taskTag3x4}</Text>
+              <View style={[styles.badge, styles.badgeGold, themeStyles.badgeGold]}>
+                <Text style={[styles.badgeText, styles.badgeGoldText, themeStyles.badgeGoldText]}>{t.taskTag3x4}</Text>
               </View>
             ) : null}
             {item.lightkeeperRequired ? (
@@ -311,7 +339,15 @@ export default function TasksScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </TouchableOpacity>
     );
-  }, [handleOpenTask, t.level, t.taskAnyMap, t.taskTag3x4, t.taskTagLightkeeper]);
+  }, [
+    handleOpenTask,
+    t.level,
+    t.taskAnyMap,
+    t.taskTag3x4,
+    t.taskTagLightkeeper,
+    themeStyles.badgeGold,
+    themeStyles.badgeGoldText,
+  ]);
 
   const listHeader = (
     <View style={styles.searchSection}>
@@ -355,7 +391,11 @@ export default function TasksScreen() {
           contentContainerStyle={styles.quickToggleRow}
         >
           <TouchableOpacity
-            style={[styles.quickToggleChip, only3x4Required && styles.quickToggleChipActive]}
+            style={[
+              styles.quickToggleChip,
+              only3x4Required && styles.quickToggleChipActive,
+              only3x4Required && themeStyles.quickToggleChipActive,
+            ]}
             onPress={() => setOnly3x4Required((prev) => !prev)}
             activeOpacity={0.75}
           >
@@ -364,7 +404,11 @@ export default function TasksScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.quickToggleChip, onlyLightkeeperRequired && styles.quickToggleChipActive]}
+            style={[
+              styles.quickToggleChip,
+              onlyLightkeeperRequired && styles.quickToggleChipActive,
+              onlyLightkeeperRequired && themeStyles.quickToggleChipActive,
+            ]}
             onPress={() => setOnlyLightkeeperRequired((prev) => !prev)}
             activeOpacity={0.75}
           >
@@ -378,7 +422,7 @@ export default function TasksScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <FlatList
         data={visibleTasks}
         keyExtractor={(item) => item.id}
@@ -438,7 +482,7 @@ export default function TasksScreen() {
                     return (
                       <TouchableOpacity
                         key={trader.key}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.filterChipActive]}
                         onPress={() => toggleDraftTrader(trader.key)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -457,8 +501,8 @@ export default function TasksScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeTraderModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyTraderSelection}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.modalActionPrimary]} onPress={applyTraderSelection}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.modalActionPrimaryText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -483,7 +527,7 @@ export default function TasksScreen() {
                     return (
                       <TouchableOpacity
                         key={`level-${level}`}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.filterChipActive]}
                         onPress={() => toggleDraftLevel(level)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -502,8 +546,8 @@ export default function TasksScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeLevelModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyLevelSelection}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.modalActionPrimary]} onPress={applyLevelSelection}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.modalActionPrimaryText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -528,7 +572,7 @@ export default function TasksScreen() {
                     return (
                       <TouchableOpacity
                         key={`faction-${faction.key}`}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.filterChipActive]}
                         onPress={() => toggleDraftFaction(faction.key)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -547,8 +591,8 @@ export default function TasksScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeFactionModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyFactionSelection}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.modalActionPrimary]} onPress={applyFactionSelection}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.modalActionPrimaryText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -605,7 +649,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   filterButtonText: {
     fontSize: 12,
@@ -621,11 +665,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   quickToggleChipActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   quickToggleText: {
     fontSize: 12,
@@ -665,7 +709,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: alphaWhite(0.08),
   },
   rowMain: {
     flex: 1,
@@ -693,15 +737,15 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   badgeGold: {
     borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.03),
   },
   badgeBlue: {
-    borderColor: 'rgba(75,157,255,0.45)',
-    backgroundColor: 'rgba(75,157,255,0.18)',
+    borderColor: alphaWhite(0.45),
+    backgroundColor: alphaWhite(0.18),
   },
   badgeText: {
     color: Colors.textSecondary,
@@ -712,7 +756,7 @@ const styles = StyleSheet.create({
     color: Colors.gold,
   },
   badgeBlueText: {
-    color: '#73B5FF',
+    color: Colors.text,
   },
   loadingWrap: {
     marginTop: 40,
@@ -747,7 +791,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: alphaBlack(0.6),
     padding: 20,
     justifyContent: 'center',
   },
@@ -778,11 +822,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   filterChipActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   filterChipText: {
     fontSize: 12,
@@ -813,7 +857,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.gold,
   },
   modalActionPrimaryText: {
-    color: '#1A1A14',
+    color: Colors.text,
     fontWeight: '600' as const,
   },
   emptyText: {

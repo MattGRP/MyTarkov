@@ -4,7 +4,7 @@ import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { clamp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import Colors from '@/constants/colors';
+import Colors, { alphaBlack, alphaWhite } from '@/constants/colors';
 
 interface FullScreenImageModalProps {
   visible: boolean;
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.94)',
+    backgroundColor: alphaBlack(0.94),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: alphaWhite(0.14),
     alignItems: 'center',
     justifyContent: 'center',
   },

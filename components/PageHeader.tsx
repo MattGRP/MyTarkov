@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/colors';
+import Colors, { withAlpha } from '@/constants/colors';
 
 interface PageHeaderProps {
   title: string;
@@ -36,19 +36,33 @@ export default function PageHeader({
 }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top + HEADER_TOP_EXTRA, HEADER_TOP_MIN);
+  const gradientColors = [
+    withAlpha(Colors.gold, 0.09),
+    withAlpha(Colors.surface, 0.96),
+    Colors.background,
+  ] as const;
 
   return (
-    <View onLayout={onLayout} style={[styles.wrap, { paddingTop: topPadding }, fixed && styles.fixedWrap]}>
+    <View
+      onLayout={onLayout}
+      style={[
+        styles.wrap,
+        { backgroundColor: Colors.background },
+        { paddingTop: topPadding },
+        fixed && styles.fixedWrap,
+        fixed && { borderBottomColor: Colors.border, backgroundColor: Colors.background },
+      ]}
+    >
       <LinearGradient
-        colors={['#262622', '#141410']}
+        colors={gradientColors}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 0.86, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
       <View style={[styles.row, !(left || right) && styles.rowNoActions]}>
         <View style={[styles.side, !left && styles.sideEmpty]}>{left}</View>
         <View style={styles.content}>
-          {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+          {!!subtitle && <Text style={[styles.subtitle, { color: withAlpha(Colors.gold, 0.72) }]}>{subtitle}</Text>}
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
         </View>
         <View style={[styles.side, styles.sideRight, !right && styles.sideEmpty]}>{right}</View>
@@ -70,7 +84,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 20,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
     elevation: 4,
   },
   row: {
@@ -102,7 +115,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     letterSpacing: 2,
-    color: Colors.goldDim,
     textTransform: 'uppercase' as const,
   },
   title: {

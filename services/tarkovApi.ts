@@ -18,20 +18,23 @@ import {
   TraderDetail,
   getItemImageURL,
 } from '@/types/tarkov';
+import { DEFAULT_GAME_MODE, GameMode, normalizeGameMode } from '@/constants/gameMode';
 import { Language } from '@/constants/i18n';
 import { logInfo, logWarn } from '@/utils/debugLog';
 
-const PROFILE_BASE_URL = 'https://players.tarkov.dev/profile';
 const PLAYER_SEARCH_BASE_URL = 'https://player.tarkov.dev';
+const PLAYER_PROFILE_STATIC_BASE_URL = 'https://players.tarkov.dev/profile';
 const GRAPHQL_URL = 'https://api.tarkov.dev/graphql';
 const ITEM_META_BASE_URL = 'https://assets.tarkov.dev';
 const PLAYER_SEARCH_TOKEN_KEY = 'tarkov_player_search_token';
 const PLAYER_SEARCH_TOKEN_UPDATED_AT_KEY = 'tarkov_player_search_token_updated_at';
+const PLAYER_PROFILE_PERSIST_KEY_PREFIX = 'tarkov_profile_cache';
 const TURNSTILE_ERROR_CODE = 'TURNSTILE_REQUIRED';
 const PLAYER_SEARCH_CACHE_TTL_MS = 15 * 60 * 1000;
 const PLAYER_SEARCH_CACHE_LIMIT = 120;
 const PLAYER_PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const PLAYER_PROFILE_CACHE_LIMIT = 60;
+const PLAYER_PROFILE_PERSIST_TTL_MS = 24 * 60 * 60 * 1000;
 const ITEM_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ITEM_SEARCH_CACHE_LIMIT = 120;
 const PLAYER_SEARCH_WARMUP_QUERY = 'zzzx';
@@ -39,6 +42,7 @@ const PLAYER_SEARCH_WARMUP_MIN_GAP_MS = 8 * 60 * 1000;
 const TRADER_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 const BOSS_MAP_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
 const BOSS_HYDRATED_ITEM_CACHE_TTL_MS = 30 * 60 * 1000;
+const PROFILE_CACHE_MODES: GameMode[] = ['regular', 'pve'];
 
 const CORS_PROXIES = [
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -52,6 +56,19 @@ const GRAPHQL_RESPONSE_CACHE_TTL_MS = 2 * 60 * 1000;
 const GRAPHQL_RESPONSE_CACHE_LIMIT = 180;
 const GRAPHQL_TIMEOUT_MS = 35000;
 const ASSET_FETCH_CONCURRENCY = 6;
+let activeGameMode: GameMode = DEFAULT_GAME_MODE;
+
+function resolveGameMode(gameMode?: GameMode): GameMode {
+  return normalizeGameMode(gameMode ?? activeGameMode);
+}
+
+export function getApiGameMode(): GameMode {
+  return activeGameMode;
+}
+
+export function setApiGameMode(gameMode: GameMode): void {
+  activeGameMode = normalizeGameMode(gameMode);
+}
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   if (items.length === 0) return [];
@@ -287,11 +304,11 @@ const itemSearchResultCache = new Map<string, { expiresAt: number; results: Item
 const itemSearchInFlight = new Map<string, Promise<ItemSearchResult[]>>();
 const graphqlResponseCache = new Map<string, { expiresAt: number; data: unknown }>();
 const graphqlInFlight = new Map<string, Promise<unknown>>();
-let playerSearchWarmupAt = 0;
-let playerSearchWarmupPromise: Promise<void> | null = null;
-let playerSearchWarmupController: AbortController | null = null;
+const playerSearchWarmupAt = new Map<GameMode, number>();
+const playerSearchWarmupPromise = new Map<GameMode, Promise<void>>();
+const playerSearchWarmupController = new Map<GameMode, AbortController>();
 const traderDetailCache = new Map<string, { expiresAt: number; data: TraderDetail }>();
-const bossMapSpawnContextCache = new Map<Language, { expiresAt: number; data: BossMapSpawnContext }>();
+const bossMapSpawnContextCache = new Map<string, { expiresAt: number; data: BossMapSpawnContext }>();
 const bossHydratedItemCache = new Map<string, { expiresAt: number; data: RawHydratedBossItem }>();
 
 type RequestPriority = 'foreground' | 'background';
@@ -345,10 +362,12 @@ function isAbortError(error: unknown): boolean {
 }
 
 function cancelPlayerSearchWarmup(): void {
-  if (!playerSearchWarmupController || playerSearchWarmupController.signal.aborted) {
-    return;
+  for (const controller of playerSearchWarmupController.values()) {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
   }
-  playerSearchWarmupController.abort();
+  playerSearchWarmupController.clear();
 }
 
 function markRequestPriority(priority: RequestPriority = 'foreground'): void {
@@ -415,9 +434,210 @@ export async function clearPlayerSearchToken(): Promise<void> {
   logWarn('PlayerSearch', 'Token cleared');
 }
 
-export function clearPlayerProfileCache(accountId?: string): void {
+function getPlayerProfileCacheKey(accountId: string, gameMode: GameMode): string {
+  return `${gameMode}:${accountId}`;
+}
+
+function getPersistedPlayerProfileKey(accountId: string, gameMode: GameMode): string {
+  return `${PLAYER_PROFILE_PERSIST_KEY_PREFIX}_${gameMode}_${accountId}`;
+}
+
+async function loadPersistedPlayerProfile(
+  accountId: string,
+  gameMode: GameMode,
+): Promise<PlayerProfile | null> {
+  const storageKey = getPersistedPlayerProfileKey(accountId, gameMode);
+  try {
+    const raw = await AsyncStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { updatedAt?: number; profile?: PlayerProfile };
+    const updatedAt = Number(parsed?.updatedAt || 0);
+    const profile = parsed?.profile;
+    if (!profile || !profile.info?.nickname) {
+      void AsyncStorage.removeItem(storageKey);
+      return null;
+    }
+    if (!Number.isFinite(updatedAt) || updatedAt <= 0 || updatedAt + PLAYER_PROFILE_PERSIST_TTL_MS < Date.now()) {
+      void AsyncStorage.removeItem(storageKey);
+      return null;
+    }
+    return profile;
+  } catch {
+    return null;
+  }
+}
+
+async function savePersistedPlayerProfile(
+  accountId: string,
+  gameMode: GameMode,
+  profile: PlayerProfile,
+): Promise<void> {
+  const storageKey = getPersistedPlayerProfileKey(accountId, gameMode);
+  try {
+    await AsyncStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        updatedAt: Date.now(),
+        profile,
+      }),
+    );
+  } catch {
+    // Ignore persistence failures and keep runtime flow unaffected.
+  }
+}
+
+async function fetchPlayerProfileWithModeApi(
+  accountId: string,
+  gameMode: GameMode,
+  token: string,
+  signal?: AbortSignal,
+): Promise<PlayerProfile> {
+  const query = new URLSearchParams();
+  query.set('gameMode', gameMode);
+  query.set('token', token.trim());
+  const requestUrl = `${PLAYER_SEARCH_BASE_URL}/account/${encodeURIComponent(accountId)}?${query.toString()}`;
+  const response = await apiFetch(
+    requestUrl,
+    {
+      method: 'GET',
+      signal,
+    },
+    30000,
+  );
+
+  if (response.status === 401) {
+    await clearPlayerSearchToken();
+    throw createTurnstileError();
+  }
+  if (response.status === 404) {
+    throw new Error('Player not found');
+  }
+  if (response.status === 429) {
+    throw new PlayerSearchError(
+      'Rate limited exceeded. Wait a minute to send another request.',
+    );
+  }
+  if (!response.ok) {
+    const message = await readPlayerSearchErrorMessage(response);
+    if (isTurnstileFailureMessage(message)) {
+      await clearPlayerSearchToken();
+      throw createTurnstileError();
+    }
+    throw new Error(message || `Player profile failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if ((payload as any)?.err) {
+    const message = String((payload as any)?.errmsg || (payload as any)?.message || 'Unexpected error');
+    if (isTurnstileFailureMessage(message)) {
+      await clearPlayerSearchToken();
+      throw createTurnstileError();
+    }
+    throw new Error(message);
+  }
+
+  return payload as PlayerProfile;
+}
+
+async function fetchPlayerProfileStaticApi(
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<PlayerProfile> {
+  const requestUrl = `${PLAYER_PROFILE_STATIC_BASE_URL}/${encodeURIComponent(accountId)}.json`;
+  const response = await apiFetch(
+    requestUrl,
+    {
+      method: 'GET',
+      signal,
+    },
+    30000,
+  );
+
+  if (response.status === 404) {
+    throw new Error('Player not found');
+  }
+  if (!response.ok) {
+    throw new Error(`Player profile failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || !(payload as any)?.info?.nickname) {
+    throw new Error('Invalid player profile payload');
+  }
+  return payload as PlayerProfile;
+}
+
+async function fetchPlayerProfileWithoutTokenApi(
+  accountId: string,
+  gameMode: GameMode,
+  signal?: AbortSignal,
+): Promise<PlayerProfile> {
+  const query = new URLSearchParams();
+  if (gameMode !== 'regular') {
+    query.set('gameMode', gameMode);
+  }
+  const requestUrl = `${PLAYER_SEARCH_BASE_URL}/account/${encodeURIComponent(accountId)}${query.toString() ? `?${query.toString()}` : ''}`;
+  const response = await apiFetch(
+    requestUrl,
+    {
+      method: 'GET',
+      signal,
+    },
+    30000,
+  );
+
+  if (response.status === 401) {
+    throw createTurnstileError();
+  }
+  if (response.status === 404) {
+    throw new Error('Player not found');
+  }
+  if (response.status === 429) {
+    throw new PlayerSearchError(
+      'Rate limited exceeded. Wait a minute to send another request.',
+    );
+  }
+  if (!response.ok) {
+    const message = await readPlayerSearchErrorMessage(response);
+    if (isTurnstileFailureMessage(message)) {
+      throw createTurnstileError();
+    }
+    throw new Error(message || `Player profile failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if ((payload as any)?.err) {
+    const message = String((payload as any)?.errmsg || (payload as any)?.message || 'Unexpected error');
+    if (isTurnstileFailureMessage(message)) {
+      throw createTurnstileError();
+    }
+    throw new Error(message);
+  }
+
+  return payload as PlayerProfile;
+}
+
+export function clearPlayerProfileCache(
+  accountId?: string,
+  options?: { gameMode?: GameMode },
+): void {
   const trimmed = String(accountId || '').trim();
   if (trimmed) {
+    const mode = options?.gameMode ? resolveGameMode(options.gameMode) : null;
+    if (mode) {
+      const cacheKey = getPlayerProfileCacheKey(trimmed, mode);
+      playerProfileCache.delete(cacheKey);
+      playerProfileInFlight.delete(cacheKey);
+      void AsyncStorage.removeItem(getPersistedPlayerProfileKey(trimmed, mode));
+      return;
+    }
+    for (const cacheMode of PROFILE_CACHE_MODES) {
+      const cacheKey = getPlayerProfileCacheKey(trimmed, cacheMode);
+      playerProfileCache.delete(cacheKey);
+      playerProfileInFlight.delete(cacheKey);
+      void AsyncStorage.removeItem(getPersistedPlayerProfileKey(trimmed, cacheMode));
+    }
+    // Backward compatibility with legacy cache keys without game mode prefix.
     playerProfileCache.delete(trimmed);
     playerProfileInFlight.delete(trimmed);
     return;
@@ -428,7 +648,7 @@ export function clearPlayerProfileCache(accountId?: string): void {
 
 export async function fetchPlayerProfile(
   accountId: string,
-  options?: { force?: boolean; signal?: AbortSignal; priority?: RequestPriority },
+  options?: { force?: boolean; signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<PlayerProfile> {
   const trimmed = String(accountId || '').trim();
   if (!trimmed) {
@@ -437,72 +657,96 @@ export async function fetchPlayerProfile(
 
   const force = options?.force === true;
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
+  const cacheKey = getPlayerProfileCacheKey(trimmed, gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
 
   if (force) {
-    clearPlayerProfileCache(trimmed);
+    clearPlayerProfileCache(trimmed, { gameMode });
   }
 
   if (!force) {
-    const cached = playerProfileCache.get(trimmed);
+    const cached = playerProfileCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.profile;
     }
     if (cached) {
-      playerProfileCache.delete(trimmed);
+      playerProfileCache.delete(cacheKey);
     }
   }
 
   if (!force && !signal) {
-    const inFlight = playerProfileInFlight.get(trimmed);
+    const inFlight = playerProfileInFlight.get(cacheKey);
     if (inFlight) {
       return inFlight;
     }
   }
 
   const task = (async () => {
-    console.log('[TarkovAPI] Fetching profile for:', trimmed);
-    const profileUrl = `${PROFILE_BASE_URL}/${trimmed}.json`;
-    const requestUrl = force ? `${profileUrl}?_=${Date.now()}` : profileUrl;
+    console.log('[TarkovAPI] Fetching profile for:', trimmed, gameMode);
     throwIfAborted(signal);
-    const response = await apiFetch(requestUrl, {
-      headers: {
-        'Cache-Control': force ? 'no-cache, no-store, max-age=0' : 'no-cache',
-        Pragma: 'no-cache',
-      },
-      signal,
-    });
 
-    if (response.status === 404) {
-      throw new Error('Player not found');
-    }
-    if (!response.ok) {
-      throw new Error(`Network error: ${response.status}`);
+    if (!force) {
+      const persisted = await loadPersistedPlayerProfile(trimmed, gameMode);
+      if (persisted) {
+        if (playerProfileCache.size >= PLAYER_PROFILE_CACHE_LIMIT) {
+          const firstKey = playerProfileCache.keys().next().value as string | undefined;
+          if (firstKey) playerProfileCache.delete(firstKey);
+        }
+        playerProfileCache.set(cacheKey, {
+          expiresAt: Date.now() + PLAYER_PROFILE_CACHE_TTL_MS,
+          profile: persisted,
+        });
+        return persisted;
+      }
     }
 
-    const data = await response.json();
-    const profile = data as PlayerProfile;
+    let profile: PlayerProfile;
+    if (gameMode === 'regular') {
+      // PvP: use legacy static profile endpoint to avoid Turnstile/token gating.
+      profile = await fetchPlayerProfileStaticApi(trimmed, signal);
+    } else {
+      // PvE: first try tokenless endpoint; only fall back to strict mode when required.
+      try {
+        profile = await fetchPlayerProfileWithoutTokenApi(trimmed, gameMode, signal);
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        const token = await getPlayerSearchToken();
+        const normalizedToken = token?.trim();
+        if (!normalizedToken) {
+          if (isTurnstileRequiredError(error)) {
+            throw error;
+          }
+          throw error;
+        }
+        profile = await fetchPlayerProfileWithModeApi(trimmed, gameMode, normalizedToken, signal);
+      }
+    }
+
     console.log('[TarkovAPI] Profile loaded:', profile?.info?.nickname);
     if (playerProfileCache.size >= PLAYER_PROFILE_CACHE_LIMIT) {
       const firstKey = playerProfileCache.keys().next().value as string | undefined;
       if (firstKey) playerProfileCache.delete(firstKey);
     }
-    playerProfileCache.set(trimmed, {
+    playerProfileCache.set(cacheKey, {
       expiresAt: Date.now() + PLAYER_PROFILE_CACHE_TTL_MS,
       profile,
     });
+    void savePersistedPlayerProfile(trimmed, gameMode, profile);
     return profile;
   })();
 
   if (!signal) {
-    playerProfileInFlight.set(trimmed, task);
+    playerProfileInFlight.set(cacheKey, task);
   }
   try {
     return await task;
   } finally {
-    if (!signal && playerProfileInFlight.get(trimmed) === task) {
-      playerProfileInFlight.delete(trimmed);
+    if (!signal && playerProfileInFlight.get(cacheKey) === task) {
+      playerProfileInFlight.delete(cacheKey);
     }
   }
 }
@@ -549,12 +793,13 @@ async function readPlayerSearchErrorMessage(response: Response): Promise<string>
 async function requestPlayerSearch(
   name: string,
   token?: string,
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<Response> {
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(options?.signal);
+  const gameMode = resolveGameMode(options?.gameMode);
   const query = new URLSearchParams();
-  query.set('gameMode', 'regular');
+  query.set('gameMode', gameMode);
   if (token?.trim()) {
     query.set('token', token.trim());
   }
@@ -573,7 +818,7 @@ async function requestPlayerSearch(
 
 async function searchPlayersRemote(
   trimmed: string,
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<SearchResult[]> {
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(options?.signal);
@@ -646,19 +891,22 @@ async function searchPlayersRemote(
 
 export async function warmupPlayerSearch(
   force: boolean = false,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; gameMode?: GameMode },
 ): Promise<void> {
+  const gameMode = resolveGameMode(options?.gameMode);
   const now = Date.now();
-  if (!force && now - playerSearchWarmupAt < PLAYER_SEARCH_WARMUP_MIN_GAP_MS) {
+  const lastWarmupAt = playerSearchWarmupAt.get(gameMode) ?? 0;
+  if (!force && now - lastWarmupAt < PLAYER_SEARCH_WARMUP_MIN_GAP_MS) {
     return;
   }
-  if (playerSearchWarmupPromise) {
-    return playerSearchWarmupPromise;
+  const existingWarmup = playerSearchWarmupPromise.get(gameMode);
+  if (existingWarmup) {
+    return existingWarmup;
   }
 
-  playerSearchWarmupPromise = (async () => {
+  const warmupTask = (async () => {
     const warmupController = new AbortController();
-    playerSearchWarmupController = warmupController;
+    playerSearchWarmupController.set(gameMode, warmupController);
     const externalSignal = options?.signal;
     const forwardAbort = () => {
       if (!warmupController.signal.aborted) {
@@ -683,6 +931,7 @@ export async function warmupPlayerSearch(
       const response = await requestPlayerSearch(PLAYER_SEARCH_WARMUP_QUERY, token, {
         signal: warmupController.signal,
         priority: 'background',
+        gameMode,
       });
       if (response.status === 401) {
         await clearPlayerSearchToken();
@@ -699,7 +948,7 @@ export async function warmupPlayerSearch(
         return;
       }
 
-      playerSearchWarmupAt = Date.now();
+      playerSearchWarmupAt.set(gameMode, Date.now());
       console.log('[TarkovAPI] Player search warmup completed');
       logInfo('PlayerSearch', 'Warmup completed');
     } catch (error) {
@@ -713,14 +962,13 @@ export async function warmupPlayerSearch(
       if (externalSignal) {
         externalSignal.removeEventListener('abort', forwardAbort);
       }
-      if (playerSearchWarmupController === warmupController) {
-        playerSearchWarmupController = null;
-      }
-      playerSearchWarmupPromise = null;
+      playerSearchWarmupController.delete(gameMode);
+      playerSearchWarmupPromise.delete(gameMode);
     }
   })();
 
-  return playerSearchWarmupPromise;
+  playerSearchWarmupPromise.set(gameMode, warmupTask);
+  return warmupTask;
 }
 
 function getCachedPlayerSearchResults(cacheKey: string): SearchResult[] | null {
@@ -747,6 +995,7 @@ function setCachedPlayerSearchResults(cacheKey: string, results: SearchResult[])
 function getItemSearchCacheKey(
   query: string,
   language: Language,
+  gameMode: GameMode,
   options?: { limit?: number; offset?: number },
 ): string {
   const normalizedQuery = query.toLowerCase();
@@ -755,11 +1004,11 @@ function getItemSearchCacheKey(
   const hasLimit = Number.isFinite(rawLimit);
   const hasOffset = Number.isFinite(rawOffset) && Number(rawOffset) > 0;
   if (!hasLimit && !hasOffset) {
-    return `${language}:${normalizedQuery}`;
+    return `${gameMode}:${language}:${normalizedQuery}`;
   }
   const limit = hasLimit ? Math.max(1, Math.floor(Number(rawLimit))) : 'all';
   const offset = hasOffset ? Math.max(0, Math.floor(Number(rawOffset))) : 0;
-  return `${language}:${normalizedQuery}:limit:${limit}:offset:${offset}`;
+  return `${gameMode}:${language}:${normalizedQuery}:limit:${limit}:offset:${offset}`;
 }
 
 function getCachedItemSearchResults(cacheKey: string): ItemSearchResult[] | null {
@@ -877,15 +1126,16 @@ function filterAndRankItemSearchResults(
 
 export async function searchPlayers(
   name: string,
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<SearchResult[]> {
   const trimmed = name.trim();
   if (!trimmed) return [];
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
 
-  const cacheKey = trimmed.toLowerCase();
+  const cacheKey = `${gameMode}:${trimmed.toLowerCase()}`;
   const cached = getCachedPlayerSearchResults(cacheKey);
   if (cached) {
     console.log('[TarkovAPI] Search cache hit:', cacheKey, cached.length);
@@ -901,7 +1151,10 @@ export async function searchPlayers(
 
   console.log('[TarkovAPI] Searching players:', trimmed);
   const task = (async () => {
-    const results = await searchPlayersRemote(trimmed, options);
+    const results = await searchPlayersRemote(trimmed, {
+      ...options,
+      gameMode,
+    });
     setCachedPlayerSearchResults(cacheKey, results);
     console.log('[TarkovAPI] Search results:', results.length);
     return results;
@@ -1040,11 +1293,12 @@ function getItemMetaCacheKey(tpl: string, language: Language): string {
 export async function searchItems(
   name: string,
   language: Language = 'en',
-  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority },
+  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<ItemSearchResult[]> {
   const trimmed = name.trim();
   if (!trimmed) return [];
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const hasLimit = Number.isFinite(options?.limit);
@@ -1052,7 +1306,7 @@ export async function searchItems(
   const requestLimit = hasLimit ? Math.max(1, Math.floor(Number(options?.limit))) : undefined;
   const requestOffset = hasOffset ? Math.max(0, Math.floor(Number(options?.offset))) : 0;
 
-  const cacheKey = getItemSearchCacheKey(trimmed, language, {
+  const cacheKey = getItemSearchCacheKey(trimmed, language, gameMode, {
     limit: requestLimit,
     offset: requestOffset,
   });
@@ -1068,8 +1322,8 @@ export async function searchItems(
     }
   }
 
-  const query = `query ItemSearch($name: String, $lang: LanguageCode, $limit: Int, $offset: Int) {
-    items(name: $name, lang: $lang, limit: $limit, offset: $offset) {
+  const query = `query ItemSearch($name: String, $lang: LanguageCode, $gameMode: GameMode, $limit: Int, $offset: Int) {
+    items(name: $name, lang: $lang, gameMode: $gameMode, limit: $limit, offset: $offset) {
       id
       name
       shortName
@@ -1089,6 +1343,7 @@ export async function searchItems(
       {
         name: trimmed,
         lang: language,
+        gameMode,
         limit: requestLimit ?? null,
         offset: requestOffset > 0 ? requestOffset : null,
       },
@@ -1149,9 +1404,11 @@ export async function searchItemsByCategories(
     offset?: number;
     signal?: AbortSignal;
     priority?: RequestPriority;
+    gameMode?: GameMode;
   },
 ): Promise<ItemSearchResult[]> {
   const language = options.language ?? 'en';
+  const gameMode = resolveGameMode(options.gameMode);
   const signal = options.signal;
   markRequestPriority(options.priority ?? 'foreground');
   throwIfAborted(signal);
@@ -1182,6 +1439,7 @@ export async function searchItemsByCategories(
       offset: hasExplicitOffset ? requestOffset : undefined,
       signal,
       priority: options.priority,
+      gameMode,
     });
   }
 
@@ -1243,10 +1501,11 @@ export async function searchItemsByCategories(
   const queryByCategoryOnly = `query ItemSearchByCategory(
     $categoryNames: [String!]
     $lang: LanguageCode
+    $gameMode: GameMode
     $limit: Int
     $offset: Int
   ) {
-    items(categoryNames: $categoryNames, lang: $lang, limit: $limit, offset: $offset) {
+    items(categoryNames: $categoryNames, lang: $lang, gameMode: $gameMode, limit: $limit, offset: $offset) {
       id
       name
       shortName
@@ -1265,10 +1524,11 @@ export async function searchItemsByCategories(
     $name: String!
     $categoryNames: [String!]
     $lang: LanguageCode
+    $gameMode: GameMode
     $limit: Int
     $offset: Int
   ) {
-    items(name: $name, categoryNames: $categoryNames, lang: $lang, limit: $limit, offset: $offset) {
+    items(name: $name, categoryNames: $categoryNames, lang: $lang, gameMode: $gameMode, limit: $limit, offset: $offset) {
       id
       name
       shortName
@@ -1289,6 +1549,7 @@ export async function searchItemsByCategories(
     const variables: Record<string, unknown> = {
       categoryNames: resolvedCategoryNames,
       lang,
+      gameMode,
       limit,
       offset,
     };
@@ -1414,15 +1675,16 @@ export async function searchItemsByCategories(
 export async function fetchItemDetail(
   id: string,
   language: Language = 'en',
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<ItemDetail | null> {
   const trimmed = id.trim();
   if (!trimmed) return null;
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
-  const query = `query ItemDetailByIds($ids: [ID!], $lang: LanguageCode) {
-    items(ids: $ids, lang: $lang) {
+  const query = `query ItemDetailByIds($ids: [ID!], $lang: LanguageCode, $gameMode: GameMode) {
+    items(ids: $ids, lang: $lang, gameMode: $gameMode) {
       id
       name
       normalizedName
@@ -1633,7 +1895,7 @@ export async function fetchItemDetail(
   const fetchByLanguage = async (lang: Language): Promise<ItemDetail | null> => {
     const data = await graphqlFetch<{ items?: ItemDetail[] }>(
       query,
-      { ids: [trimmed], lang },
+      { ids: [trimmed], lang, gameMode },
       { signal },
     );
     return data.items?.[0] ?? null;
@@ -1942,9 +2204,10 @@ export async function fetchItemNamesByIds(ids: string[], language: Language): Pr
 
 export async function fetchTaskSummaries(
   language: Language = 'en',
-  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority },
+  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<TaskDetail[]> {
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const query = `query TaskSummaries($lang: LanguageCode, $gameMode: GameMode, $limit: Int, $offset: Int) {
@@ -1979,7 +2242,7 @@ export async function fetchTaskSummaries(
       query,
       {
         lang: language,
-        gameMode: 'regular',
+        gameMode,
         limit,
         offset,
       },
@@ -2009,9 +2272,10 @@ export async function fetchTaskSummaries(
 
 export async function fetchTasks(
   language: Language = 'en',
-  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority },
+  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<TaskDetail[]> {
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const query = `query Tasks($lang: LanguageCode, $gameMode: GameMode, $limit: Int, $offset: Int) {
@@ -2390,7 +2654,7 @@ export async function fetchTasks(
       query,
       {
         lang: language,
-        gameMode: 'regular',
+        gameMode,
         limit,
         offset,
       },
@@ -2421,7 +2685,7 @@ export async function fetchTasks(
 export async function fetchTaskById(
   taskId: string,
   language: Language = 'en',
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<TaskDetail | null> {
   const trimmed = String(taskId || '').trim();
   if (!trimmed) return null;
@@ -2443,6 +2707,7 @@ export async function fetchTaskById(
       offset,
       signal,
       priority: options?.priority,
+      gameMode: options?.gameMode,
     });
     const localIndex = summaryChunk.findIndex(isMatch);
     if (localIndex >= 0) {
@@ -2452,6 +2717,7 @@ export async function fetchTaskById(
         offset: absoluteOffset,
         signal,
         priority: options?.priority,
+        gameMode: options?.gameMode,
       });
       const matchedDetail = detailRows.find(isMatch) ?? detailRows[0];
       return matchedDetail ?? summaryChunk[localIndex];
@@ -2465,7 +2731,7 @@ export async function fetchTaskById(
 export async function fetchTraderById(
   traderIdOrName: string,
   language: Language = 'en',
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<TraderDetail | null> {
   const trimmed = String(traderIdOrName || '').trim();
   if (!trimmed) return null;
@@ -2490,6 +2756,7 @@ export async function fetchTraderById(
       offset,
       signal,
       priority: options?.priority,
+      gameMode: options?.gameMode,
     });
     const localIndex = chunk.findIndex(isMatch);
     if (localIndex >= 0) {
@@ -2501,16 +2768,20 @@ export async function fetchTraderById(
   }
 
   if (!matchedSummary || matchedOffset < 0) return null;
-  const detail = await fetchTraderWithOffersByOffset(language, matchedOffset, { signal });
+  const detail = await fetchTraderWithOffersByOffset(language, matchedOffset, {
+    signal,
+    gameMode: options?.gameMode,
+  });
   if (detail && isMatch(detail)) return detail;
   return detail ?? matchedSummary;
 }
 
 export async function fetchTraders(
   language: Language = 'en',
-  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority },
+  options?: { limit?: number; offset?: number; signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<TraderDetail[]> {
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const query = `query Traders($lang: LanguageCode, $gameMode: GameMode, $limit: Int, $offset: Int) {
@@ -2536,7 +2807,7 @@ export async function fetchTraders(
       query,
       {
         lang: language,
-        gameMode: 'regular',
+        gameMode,
         limit,
         offset,
       },
@@ -2567,11 +2838,12 @@ export async function fetchTraders(
 async function fetchTraderWithOffersByOffset(
   language: Language,
   offset: number,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; gameMode?: GameMode },
 ): Promise<TraderDetail | null> {
   if (!Number.isFinite(offset) || offset < 0) return null;
   throwIfAborted(options?.signal);
-  const cacheKey = `${language}:${offset}`;
+  const gameMode = resolveGameMode(options?.gameMode);
+  const cacheKey = `${gameMode}:${language}:${offset}`;
   const cached = traderDetailCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.data;
@@ -2675,7 +2947,7 @@ async function fetchTraderWithOffersByOffset(
     query,
     {
       lang: language,
-      gameMode: 'regular',
+      gameMode,
       limit: 1,
       offset,
     },
@@ -2812,18 +3084,24 @@ function getBossHydratedItemCacheKey(itemId: string, language: Language): string
   return `${language}:${String(itemId || '').trim()}`;
 }
 
-function getBossMapContextFromCache(language: Language): BossMapSpawnContext | null {
-  const cached = bossMapSpawnContextCache.get(language);
+function getBossMapContextCacheKey(language: Language, gameMode: GameMode): string {
+  return `${gameMode}:${language}`;
+}
+
+function getBossMapContextFromCache(language: Language, gameMode: GameMode): BossMapSpawnContext | null {
+  const cacheKey = getBossMapContextCacheKey(language, gameMode);
+  const cached = bossMapSpawnContextCache.get(cacheKey);
   if (!cached) return null;
   if (cached.expiresAt <= Date.now()) {
-    bossMapSpawnContextCache.delete(language);
+    bossMapSpawnContextCache.delete(cacheKey);
     return null;
   }
   return cached.data;
 }
 
-function setBossMapContextToCache(language: Language, data: BossMapSpawnContext): void {
-  bossMapSpawnContextCache.set(language, {
+function setBossMapContextToCache(language: Language, gameMode: GameMode, data: BossMapSpawnContext): void {
+  const cacheKey = getBossMapContextCacheKey(language, gameMode);
+  bossMapSpawnContextCache.set(cacheKey, {
     expiresAt: Date.now() + BOSS_MAP_CONTEXT_CACHE_TTL_MS,
     data,
   });
@@ -3285,11 +3563,12 @@ function mergeBossDetails(rows: BossDetail[]): BossDetail[] {
 
 async function fetchBossMapSpawnContext(
   language: Language,
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<BossMapSpawnContext> {
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(options?.signal);
-  const cachedContext = getBossMapContextFromCache(language);
+  const cachedContext = getBossMapContextFromCache(language, gameMode);
   if (cachedContext) {
     return cachedContext;
   }
@@ -3383,9 +3662,13 @@ async function fetchBossMapSpawnContext(
     } | null>;
   }>(
     query,
-    { lang: requestLanguage, gameMode: 'regular' },
+    { lang: requestLanguage, gameMode },
     requestLanguage,
-    { ...options, allowPartialData: true },
+    {
+      signal: options?.signal,
+      priority: options?.priority,
+      allowPartialData: true,
+    },
   );
 
   let data = await loadMapData(language);
@@ -3566,7 +3849,7 @@ async function fetchBossMapSpawnContext(
     followersByBossName,
     followerOnlyNames,
   };
-  setBossMapContextToCache(language, result);
+  setBossMapContextToCache(language, gameMode, result);
   return result;
 }
 
@@ -3749,9 +4032,11 @@ export async function fetchBosses(
     includeFollowers?: boolean;
     signal?: AbortSignal;
     priority?: RequestPriority;
+    gameMode?: GameMode;
   },
 ): Promise<BossDetail[]> {
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const query = `query BossesList(
@@ -3789,7 +4074,7 @@ export async function fetchBosses(
       query,
       {
         lang: requestLanguage,
-        gameMode: 'regular',
+        gameMode,
         // Upstream bosses(name: null) can return "Unexpected error."
         // Omit the variable when empty to request full boss list.
         name: names.length > 0 ? names : undefined,
@@ -3836,7 +4121,7 @@ export async function fetchBosses(
 
   let spawnContext: BossMapSpawnContext;
   try {
-    spawnContext = await fetchBossMapSpawnContext(language, { signal });
+    spawnContext = await fetchBossMapSpawnContext(language, { signal, gameMode });
   } catch (error) {
     console.log('[TarkovAPI] Boss map context fetch failed:', error);
     spawnContext = {
@@ -3881,7 +4166,7 @@ export async function fetchBosses(
 async function fetchBossDetailCandidates(
   names: string[],
   language: Language,
-  options?: { signal?: AbortSignal; priority?: RequestPriority },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
 ): Promise<BossDetail[]> {
   const normalizedNames = names
     .map((entry) => String(entry || '').trim())
@@ -3889,6 +4174,7 @@ async function fetchBossDetailCandidates(
   if (normalizedNames.length === 0) return [];
 
   const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
   markRequestPriority(options?.priority ?? 'foreground');
   throwIfAborted(signal);
   const query = `query BossesDetail(
@@ -3931,7 +4217,7 @@ async function fetchBossDetailCandidates(
       query,
       {
         lang: requestLanguage,
-        gameMode: 'regular',
+        gameMode,
         name: normalizedNames,
         limit: 20,
         offset: 0,
@@ -3950,7 +4236,7 @@ async function fetchBossDetailCandidates(
 
   let spawnContext: BossMapSpawnContext;
   try {
-    spawnContext = await fetchBossMapSpawnContext(language, { signal });
+    spawnContext = await fetchBossMapSpawnContext(language, { signal, gameMode });
   } catch (error) {
     console.log('[TarkovAPI] Boss detail map context fetch failed:', error);
     spawnContext = {
@@ -4009,7 +4295,7 @@ async function fetchBossDetailCandidates(
 export async function fetchBossById(
   bossIdOrName: string,
   language: Language = 'en',
-  options?: { signal?: AbortSignal; priority?: RequestPriority; hints?: string[] },
+  options?: { signal?: AbortSignal; priority?: RequestPriority; hints?: string[]; gameMode?: GameMode },
 ): Promise<BossDetail | null> {
   const trimmed = String(bossIdOrName || '').trim();
   if (!trimmed) return null;
@@ -4025,7 +4311,10 @@ export async function fetchBossById(
     ),
   );
 
-  const directCandidates = await fetchBossDetailCandidates(initialProbes, language, { signal });
+  const directCandidates = await fetchBossDetailCandidates(initialProbes, language, {
+    signal,
+    gameMode: options?.gameMode,
+  });
   const directHit = directCandidates.find((boss) => (
     initialProbes.some((probe) => isBossMatch(boss, probe))
   ));
@@ -4037,11 +4326,16 @@ export async function fetchBossById(
     names: initialProbes,
     includeFollowers: true,
     signal,
+    gameMode: options?.gameMode,
   });
   matched = scopedBosses.find((boss) => initialProbes.some((probe) => isBossMatch(boss, probe))) ?? null;
 
   if (!matched) {
-    const allBosses = await fetchBosses(language, { includeFollowers: true, signal });
+    const allBosses = await fetchBosses(language, {
+      includeFollowers: true,
+      signal,
+      gameMode: options?.gameMode,
+    });
     matched = allBosses.find((boss) => initialProbes.some((probe) => isBossMatch(boss, probe))) ?? null;
   }
   if (!matched) return null;
@@ -4053,7 +4347,10 @@ export async function fetchBossById(
         .filter(Boolean),
     ),
   );
-  const fallbackCandidates = await fetchBossDetailCandidates(probeNames, language, { signal });
+  const fallbackCandidates = await fetchBossDetailCandidates(probeNames, language, {
+    signal,
+    gameMode: options?.gameMode,
+  });
   return fallbackCandidates.find((boss) => isBossMatch(boss, matched.id) || isBossMatch(boss, matched.name))
     ?? fallbackCandidates[0]
     ?? null;

@@ -1,18 +1,21 @@
 import { Stack } from 'expo-router';
 import React from 'react';
 import Colors from '@/constants/colors';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 
 export default function SearchLayout() {
   const { t } = useLanguage();
+  const { gameMode } = useGameMode();
   return (
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: Colors.background },
-        headerTintColor: Colors.text,
+        headerShadowVisible: false,
+        headerTintColor: Colors.gold,
         headerTitleStyle: { fontWeight: '600' as const },
         contentStyle: { backgroundColor: Colors.background },
-        headerBackTitle: t.back,
+        headerBackTitle: gameMode === 'pve' ? t.back : t.back,
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />

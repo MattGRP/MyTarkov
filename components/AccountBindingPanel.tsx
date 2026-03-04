@@ -2,8 +2,9 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, ScrollView, Alert, Modal, Platform, type LayoutChangeEvent } from 'react-native';
 import { User } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
-import Colors from '@/constants/colors';
+import Colors, { alphaBlack, getModeAccentTheme, withAlpha } from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import {
   fetchPlayerProfile,
@@ -36,6 +37,7 @@ function extractAccountIdFromUrl(rawUrl?: string): string | null {
 
 export default function AccountBindingPanel({ onBound, onSearchInputFocus }: AccountBindingPanelProps) {
   const { playerName, playerAccountId, savePlayer, clearPlayer } = useAuth();
+  const { gameMode } = useGameMode();
   const { language } = useLanguage();
   const isAndroid = Platform.OS === 'android';
   const l = useCallback((zh: string, en: string, ru: string) => {
@@ -65,7 +67,29 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
   const webBindPromptingRef = useRef(false);
 
   const trimmedInput = useMemo(() => playerNameInput.trim(), [playerNameInput]);
+  const playerSearchPageUrl = useMemo(
+    () => `https://tarkov.dev/players?gameMode=${encodeURIComponent(gameMode)}`,
+    [gameMode],
+  );
   const isRebinding = !!playerAccountId;
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const themeStyles = useMemo(() => {
+    return {
+      iconWrap: {
+        backgroundColor: withAlpha(accentTheme.accent, 0.08),
+      },
+      primaryButton: {
+        backgroundColor: accentTheme.accent,
+        borderColor: accentTheme.accent,
+      },
+      primaryButtonText: {
+        color: accentTheme.accentTextOnSolid,
+      },
+      actionText: {
+        color: accentTheme.accent,
+      },
+    };
+  }, [accentTheme]);
 
   const handleBound = useCallback(() => {
     onBound?.();
@@ -112,14 +136,14 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
     setPreviewErrorMessage('');
     setIsPreviewLoading(true);
     try {
-      const profile = await fetchPlayerProfile(result.id);
+      const profile = await fetchPlayerProfile(result.id, { gameMode });
       setPreviewProfile(profile);
     } catch (error) {
       setPreviewErrorMessage((error as Error).message);
     } finally {
       setIsPreviewLoading(false);
     }
-  }, []);
+  }, [gameMode]);
 
   const handleConfirmBind = useCallback(async () => {
     if (!previewResult || !previewProfile) return;
@@ -142,7 +166,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
     setIsAndroidWebBinding(true);
     setErrorMessage('');
     try {
-      const profile = await fetchPlayerProfile(accountId);
+      const profile = await fetchPlayerProfile(accountId, { gameMode });
       await savePlayer(profile.info.nickname, accountId);
       setPlayerNameInput(profile.info.nickname);
       setNameResults([]);
@@ -154,7 +178,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
       setIsAndroidWebBinding(false);
       webBindPromptingRef.current = false;
     }
-  }, [handleBound, savePlayer]);
+  }, [gameMode, handleBound, savePlayer]);
 
   const promptBindFromDetectedAccount = useCallback(async (accountId: string) => {
     if (webBindPromptingRef.current) return;
@@ -162,7 +186,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
 
     let detectedName = '';
     try {
-      const profile = await fetchPlayerProfile(accountId);
+      const profile = await fetchPlayerProfile(accountId, { gameMode });
       detectedName = profile.info.nickname;
     } catch {
       detectedName = '';
@@ -202,7 +226,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
         cancelable: true,
       },
     );
-  }, [bindFromAccountId, isRebinding, l]);
+  }, [bindFromAccountId, gameMode, isRebinding, l]);
 
   const handleAndroidWebNavigationChange = useCallback((event: { url?: string }) => {
     if (!isAndroid || !androidWebVisible || webBindPromptingRef.current) return;
@@ -250,7 +274,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
     setIsSearchingName(true);
     setErrorMessage('');
     try {
-      const results = await searchPlayers(nameQuery);
+      const results = await searchPlayers(nameQuery, { gameMode });
       await applyNameSearchResults(results);
       setHasRetriedWithFreshToken(false);
     } catch (error) {
@@ -273,7 +297,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
     } finally {
       setIsSearchingName(false);
     }
-  }, [applyNameSearchResults, hasRetriedWithFreshToken, l]);
+  }, [applyNameSearchResults, gameMode, hasRetriedWithFreshToken, l]);
 
   const handleSearchByName = useCallback(async () => {
     if (!trimmedInput) return;
@@ -369,7 +393,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.iconWrap}>
+        <View style={[styles.iconWrap, themeStyles.iconWrap]}>
           <User size={28} color={Colors.gold} strokeWidth={1.5} />
         </View>
         <Text style={styles.title}>
@@ -438,7 +462,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
         </Text>
 
         <TouchableOpacity
-          style={[styles.searchButton, (!trimmedInput || loading) && styles.searchButtonDisabled]}
+          style={[styles.searchButton, themeStyles.primaryButton, (!trimmedInput || loading) && styles.searchButtonDisabled]}
           onPress={handleSearchByName}
           disabled={!trimmedInput || loading}
           activeOpacity={0.8}
@@ -447,7 +471,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
           {loading ? (
             <View style={styles.loadingRow}>
               <ShimmerBlock width={16} height={16} borderRadius={8} />
-              <Text style={styles.searchButtonText}>
+              <Text style={[styles.searchButtonText, themeStyles.primaryButtonText]}>
                 {isTokenResolving
                   ? l('正在完成验证...', 'Verifying...', 'Проверка...')
                   : isLinking
@@ -460,7 +484,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
               </Text>
             </View>
           ) : (
-            <Text style={styles.searchButtonText}>
+            <Text style={[styles.searchButtonText, themeStyles.primaryButtonText]}>
               {isAndroid
                 ? (isRebinding
                   ? l('使用ID换绑', 'Rebind by ID', 'Сменить по ID')
@@ -505,7 +529,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
                   <View style={styles.resultInfo}>
                     <Text style={styles.resultName}>{result.name}</Text>
                   </View>
-                  <Text style={styles.resultAction}>{l('查看', 'Review', 'Проверить')}</Text>
+                  <Text style={[styles.resultAction, themeStyles.actionText]}>{l('查看', 'Review', 'Проверить')}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -535,7 +559,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
             )}
           </Text>
           <WebView
-            source={{ uri: 'https://tarkov.dev/players?gameMode=regular' }}
+            source={{ uri: playerSearchPageUrl }}
             javaScriptEnabled
             domStorageEnabled
             sharedCookiesEnabled
@@ -600,7 +624,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
                 <Text style={styles.previewCancelText}>{l('取消', 'Cancel', 'Отмена')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.previewConfirmButton, (!previewProfile || isPreviewLoading || isLinking) && styles.previewConfirmButtonDisabled]}
+                style={[styles.previewConfirmButton, themeStyles.primaryButton, (!previewProfile || isPreviewLoading || isLinking) && styles.previewConfirmButtonDisabled]}
                 onPress={handleConfirmBind}
                 activeOpacity={0.8}
                 disabled={!previewProfile || isPreviewLoading || isLinking}
@@ -608,7 +632,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
                 {isLinking ? (
                   <ShimmerBlock width={56} height={14} />
                 ) : (
-                  <Text style={styles.previewConfirmText}>
+                  <Text style={[styles.previewConfirmText, themeStyles.primaryButtonText]}>
                     {isRebinding ? l('确认换绑', 'Confirm Rebind', 'Подтвердить смену') : l('确认绑定', 'Confirm Bind', 'Подтвердить привязку')}
                   </Text>
                 )}
@@ -625,6 +649,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
           onTokenCaptured={handleTokenCaptured}
           onError={handleTokenCaptureError}
           searchName={(pendingNameQuery || trimmedInput || 'player').trim()}
+          gameMode={gameMode}
           silent
         />
       )}
@@ -651,7 +676,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(217,191,115,0.08)',
+    backgroundColor: Colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -699,7 +724,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     borderWidth: 1,
     borderColor: Colors.statRed,
-    backgroundColor: 'rgba(205,30,47,0.1)',
+    backgroundColor: withAlpha(Colors.statRed, 0.1),
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -759,7 +784,7 @@ const styles = StyleSheet.create({
   searchButtonText: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: '#1A1A14',
+    color: Colors.text,
   },
   webBindButton: {
     borderRadius: 12,
@@ -829,7 +854,7 @@ const styles = StyleSheet.create({
   },
   previewOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(6,6,5,0.8)',
+    backgroundColor: alphaBlack(0.8),
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
@@ -843,7 +868,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     padding: 14,
     gap: 10,
-    shadowColor: '#000',
+    shadowColor: alphaBlack(1),
     shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -932,7 +957,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   previewConfirmText: {
-    color: '#1A1A14',
+    color: Colors.text,
     fontSize: 13,
     fontWeight: '700' as const,
   },
@@ -991,10 +1016,11 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: 'rgba(10,10,10,0.82)',
+    backgroundColor: alphaBlack(0.82),
   },
   webModalLoadingText: {
     color: Colors.text,
     fontSize: 12,
   },
 });
+

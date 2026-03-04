@@ -13,13 +13,14 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ExternalLink } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import {
   localizeBossBehavior,
   localizeBossNarrative,
   localizeBossName,
   localizeCategoryName,
 } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchBossById } from '@/services/tarkovApi';
 import type {
@@ -153,6 +154,12 @@ export default function BossDetailScreen() {
     return String(value || '').trim();
   }, []);
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const wikiButtonTheme = useMemo(() => ({
+    borderColor: accentTheme.accentDim,
+    backgroundColor: accentTheme.accentSoft16,
+  }), [accentTheme]);
   const router = useRouter();
   const equipmentPagerRef = useRef<ScrollView | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -171,8 +178,12 @@ export default function BossDetailScreen() {
   ), [getParam, name, normalizedName]);
 
   const bossQuery = useQuery({
-    queryKey: ['boss-detail', bossId, language, bossLookupHints.join('|')],
-    queryFn: ({ signal }) => fetchBossById(bossId!, language, { signal, hints: bossLookupHints }),
+    queryKey: ['boss-detail', bossId, language, gameMode, bossLookupHints.join('|')],
+    queryFn: ({ signal }) => fetchBossById(bossId!, language, {
+      signal,
+      hints: bossLookupHints,
+      gameMode,
+    }),
     enabled: !!bossId,
     staleTime: 30 * 60 * 1000,
   });
@@ -579,7 +590,7 @@ export default function BossDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <Stack.Screen options={{ title }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
@@ -600,7 +611,7 @@ export default function BossDetailScreen() {
             <Text style={styles.heroMeta}>{t.bossTotalHp}: {totalHp > 0 ? totalHp : '-'}</Text>
             <Text style={styles.heroMeta}>{t.searchBossItems}: {boss.items?.length ?? 0}</Text>
             {boss.wikiLink ? (
-              <TouchableOpacity style={styles.wikiButton} activeOpacity={0.75} onPress={openWiki}>
+              <TouchableOpacity style={[styles.wikiButton, wikiButtonTheme]} activeOpacity={0.75} onPress={openWiki}>
                 <ExternalLink size={14} color={Colors.gold} />
                 <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
               </TouchableOpacity>
@@ -1019,7 +1030,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.03),
   },
   wikiButtonText: {
     color: Colors.gold,
@@ -1035,7 +1046,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 10,
     paddingVertical: 6,
     flexDirection: 'row',
@@ -1060,7 +1071,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: alphaWhite(0.02),
     padding: 10,
     gap: 8,
   },
@@ -1074,9 +1085,9 @@ const styles = StyleSheet.create({
   },
   spawnGroup: {
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: alphaWhite(0.08),
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: alphaWhite(0.02),
     padding: 8,
     gap: 4,
   },
@@ -1095,7 +1106,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 9,
     paddingVertical: 5,
     flexDirection: 'row',
@@ -1133,7 +1144,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: alphaWhite(0.25),
   },
   setDotActive: {
     backgroundColor: Colors.gold,
@@ -1175,7 +1186,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: alphaWhite(0.02),
     padding: 10,
   },
   itemIconWrap: {

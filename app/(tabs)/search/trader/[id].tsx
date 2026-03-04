@@ -13,8 +13,9 @@ import { useLocalSearchParams, Stack, useRouter, useSegments } from 'expo-router
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, Filter } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { alphaBlack, alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { localizeCategoryName, localizeTraderName } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchTraderById } from '@/services/tarkovApi';
 import type {
@@ -139,6 +140,29 @@ export default function TraderDetailScreen() {
     return String(value || '').trim();
   }, []);
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const themeStyles = useMemo(() => ({
+    chipActive: {
+      borderColor: accentTheme.accentDim,
+      backgroundColor: accentTheme.accentSoft18,
+    },
+    filterChipActive: {
+      borderColor: accentTheme.accentDim,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    wikiButton: {
+      borderColor: accentTheme.accentDim,
+      backgroundColor: accentTheme.accentSoft16,
+    },
+    primaryAction: {
+      backgroundColor: accentTheme.accent,
+      borderColor: accentTheme.accent,
+    },
+    primaryActionText: {
+      color: accentTheme.accentTextOnSolid,
+    },
+  }), [accentTheme]);
   const router = useRouter();
   const segments = useSegments();
   const [selectedLevelId, setSelectedLevelId] = useState<string>('');
@@ -151,8 +175,8 @@ export default function TraderDetailScreen() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 
   const traderQuery = useQuery({
-    queryKey: ['trader-detail', traderId, language],
-    queryFn: ({ signal }) => fetchTraderById(traderId!, language, { signal }),
+    queryKey: ['trader-detail', traderId, language, gameMode],
+    queryFn: ({ signal }) => fetchTraderById(traderId!, language, { signal, gameMode }),
     enabled: !!traderId,
     staleTime: 30 * 60 * 1000,
   });
@@ -401,7 +425,7 @@ export default function TraderDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <Stack.Screen options={{ title }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
@@ -420,7 +444,7 @@ export default function TraderDetailScreen() {
               {t.traderResetTime}: {formatCountdownToTimestamp(trader.resetTime, nowTick)}
             </Text>
             {traderWikiLink ? (
-              <TouchableOpacity style={styles.wikiButton} activeOpacity={0.75} onPress={openWiki}>
+              <TouchableOpacity style={[styles.wikiButton, themeStyles.wikiButton]} activeOpacity={0.75} onPress={openWiki}>
                 <ExternalLink size={14} color={Colors.gold} />
                 <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
               </TouchableOpacity>
@@ -462,7 +486,7 @@ export default function TraderDetailScreen() {
                   return (
                     <TouchableOpacity
                       key={level.id}
-                      style={[styles.levelTab, selected && styles.levelTabActive]}
+                      style={[styles.levelTab, selected && styles.levelTabActive, selected && themeStyles.chipActive]}
                       activeOpacity={0.75}
                       onPress={() => setSelectedLevelId(level.id)}
                     >
@@ -516,7 +540,7 @@ export default function TraderDetailScreen() {
                   return (
                     <TouchableOpacity
                       key={opt.key}
-                      style={[styles.sortChip, active && styles.sortChipActive]}
+                      style={[styles.sortChip, active && styles.sortChipActive, active && themeStyles.chipActive]}
                       onPress={() => handleSortSelect(opt.key)}
                       activeOpacity={0.75}
                     >
@@ -534,7 +558,7 @@ export default function TraderDetailScreen() {
             </View>
             <View style={styles.offerTypeGroup}>
               <TouchableOpacity
-                style={[styles.sortChip, offerTypeFilter === 'all' && styles.sortChipActive]}
+                style={[styles.sortChip, offerTypeFilter === 'all' && styles.sortChipActive, offerTypeFilter === 'all' && themeStyles.chipActive]}
                 activeOpacity={0.75}
                 onPress={() => setOfferTypeFilter('all')}
               >
@@ -543,7 +567,7 @@ export default function TraderDetailScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.sortChip, offerTypeFilter === 'cash' && styles.sortChipActive]}
+                style={[styles.sortChip, offerTypeFilter === 'cash' && styles.sortChipActive, offerTypeFilter === 'cash' && themeStyles.chipActive]}
                 activeOpacity={0.75}
                 onPress={() => setOfferTypeFilter('cash')}
               >
@@ -552,7 +576,7 @@ export default function TraderDetailScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.sortChip, offerTypeFilter === 'barter' && styles.sortChipActive]}
+                style={[styles.sortChip, offerTypeFilter === 'barter' && styles.sortChipActive, offerTypeFilter === 'barter' && themeStyles.chipActive]}
                 activeOpacity={0.75}
                 onPress={() => setOfferTypeFilter('barter')}
               >
@@ -715,7 +739,7 @@ export default function TraderDetailScreen() {
                     return (
                       <TouchableOpacity
                         key={category}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.filterChipActive]}
                         onPress={() => toggleDraftCategory(category)}
                         activeOpacity={0.75}
                       >
@@ -735,8 +759,8 @@ export default function TraderDetailScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeCategoryModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyCategoryFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionTextPrimary]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyCategoryFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionTextPrimary, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -843,7 +867,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.03),
   },
   wikiButtonText: {
     color: Colors.gold,
@@ -863,8 +887,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   levelTabActive: {
-    borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.18)',
+    borderColor: Colors.border,
+    backgroundColor: alphaWhite(0.03),
   },
   levelTabText: {
     color: Colors.textSecondary,
@@ -939,8 +963,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   sortChipActive: {
-    borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.18)',
+    borderColor: Colors.border,
+    backgroundColor: alphaWhite(0.03),
   },
   sortChipContent: {
     flexDirection: 'row',
@@ -1031,7 +1055,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   offerCategory: {
-    color: 'rgba(255,255,255,0.78)',
+    color: alphaWhite(0.78),
     fontSize: 11,
     fontWeight: '600' as const,
   },
@@ -1052,7 +1076,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: alphaWhite(0.02),
   },
   barterNeedsTitle: {
     color: Colors.textTertiary,
@@ -1098,7 +1122,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor: alphaBlack(0.78),
     justifyContent: 'center',
     padding: 16,
   },
@@ -1106,7 +1130,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: alphaWhite(0.16),
     padding: 14,
     maxHeight: '70%',
     gap: 10,
@@ -1133,8 +1157,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   filterChipActive: {
-    borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    borderColor: Colors.border,
+    backgroundColor: alphaWhite(0.03),
   },
   filterChipText: {
     fontSize: 12,
@@ -1167,6 +1191,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   modalActionTextPrimary: {
-    color: '#151515',
+    color: Colors.text,
   },
 });

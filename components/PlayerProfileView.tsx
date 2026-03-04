@@ -20,7 +20,16 @@ import {SvgXml} from 'react-native-svg';
 import {useQuery} from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DraggableFlatList, {RenderItemParams} from 'react-native-draggable-flatlist';
-import Colors from '@/constants/colors';
+import Colors, {
+    alphaBlack,
+    alphaWhite,
+    eodCrownBase,
+    eodCrownDark,
+    eodCrownLight,
+    tarkovGold,
+    unheardBlue,
+    withAlpha,
+} from '@/constants/colors';
 import {useLanguage} from '@/providers/LanguageProvider';
 import StatCard from '@/components/StatCard';
 import StatsRow from '@/components/StatsRow';
@@ -245,7 +254,14 @@ export default function PlayerProfileView({
     const memberCategory = profile.info.selectedMemberCategory ?? profile.info.memberCategory ?? 0;
     const isUnheard = (memberCategory & 1024) === 1024;
     const isEod = !isUnheard && (memberCategory & 2) === 2;
-    const nicknameColor = isUnheard ? '#4AA3FF' : isEod ? Colors.gold : '#FFFFFF';
+    const nicknameColor = isUnheard ? unheardBlue : isEod ? tarkovGold : Colors.text;
+    const headerGradientColors: [string, string] = isBear
+        ? [Colors.bearRed, withAlpha(Colors.background, 0.92)]
+        : [Colors.usecBlue, withAlpha(Colors.background, 0.92)];
+    const compactHeaderGradientColors: [string, string] = isBear
+        ? [withAlpha(Colors.bearRed, 0.72), withAlpha(Colors.background, 0.92)]
+        : [withAlpha(Colors.usecBlue, 0.72), withAlpha(Colors.background, 0.92)];
+    const sideBadgeBackground = isBear ? withAlpha(Colors.bearRed, 0.6) : withAlpha(Colors.usecBlue, 0.6);
     const headerTopPadding = Math.max(44, insets.top + 24);
     const [compactHeaderVisible, setCompactHeaderVisible] = useState(false);
     const compactHeaderVisibleRef = useRef(false);
@@ -522,7 +538,7 @@ export default function PlayerProfileView({
             >
             <View style={styles.headerWrap}>
                 <LinearGradient
-                    colors={isBear ? ['#8C2620', '#141410'] : ['#1F3366', '#141410']}
+                    colors={headerGradientColors}
                     start={{x: 0, y: 0}}
                     end={{x: 1, y: 1}}
                     style={styles.headerGradient}
@@ -557,11 +573,11 @@ export default function PlayerProfileView({
                     </View>
                     <View style={styles.badgesRow}>
                         <View
-                            style={[styles.badge, {backgroundColor: isBear ? 'rgba(140,38,32,0.6)' : 'rgba(31,51,102,0.6)'}]}>
+                            style={[styles.badge, {backgroundColor: sideBadgeBackground}]}>
                             <Text style={styles.badgeText}>{profile.info.side.toUpperCase()}</Text>
                         </View>
                         <View style={[styles.badge, {
-                            backgroundColor: 'rgba(217,191,115,0.15)',
+                            backgroundColor: withAlpha(Colors.gold, 0.15),
                             borderColor: Colors.goldDim,
                             borderWidth: 1
                         }]}>
@@ -865,7 +881,7 @@ export default function PlayerProfileView({
                     ]}
                 >
                     <LinearGradient
-                        colors={isBear ? ['#5C201B', '#141410'] : ['#1C2D57', '#141410']}
+                        colors={compactHeaderGradientColors}
                         start={{x: 0, y: 0}}
                         end={{x: 1, y: 1}}
                         style={StyleSheet.absoluteFill}
@@ -877,7 +893,7 @@ export default function PlayerProfileView({
                                 <Text style={[styles.compactNickname, {color: nicknameColor}]} numberOfLines={1}>{profile.info.nickname}</Text>
                             </View>
                             <View style={styles.compactBadgesRow}>
-                                <View style={[styles.compactBadge, {backgroundColor: isBear ? 'rgba(140,38,32,0.6)' : 'rgba(31,51,102,0.6)'}]}>
+                                <View style={[styles.compactBadge, {backgroundColor: sideBadgeBackground}]}>
                                     <Text style={styles.compactBadgeText}>{profile.info.side.toUpperCase()}</Text>
                                 </View>
                                 <View style={[styles.compactBadge, styles.compactLevelBadge]}>
@@ -977,14 +993,14 @@ const styles = StyleSheet.create({
         paddingVertical: 2,
     },
     compactLevelBadge: {
-        backgroundColor: 'rgba(217,191,115,0.15)',
+        backgroundColor: withAlpha(Colors.gold, 0.15),
         borderColor: Colors.goldDim,
         borderWidth: 1,
     },
     compactBadgeText: {
         fontSize: 10,
         fontWeight: '700' as const,
-        color: '#FFFFFF',
+        color: Colors.text,
         letterSpacing: 0.3,
     },
     compactHeaderRight: {
@@ -1054,7 +1070,7 @@ const styles = StyleSheet.create({
     nickname: {
         fontSize: 28,
         fontWeight: '700' as const,
-        color: '#FFFFFF',
+        color: Colors.text,
         marginBottom: 8,
     },
     badgesRow: {
@@ -1070,7 +1086,7 @@ const styles = StyleSheet.create({
     badgeText: {
         fontSize: 10,
         fontWeight: '700' as const,
-        color: '#FFFFFF',
+        color: Colors.text,
         letterSpacing: 0.5,
     },
     headerStatsRow: {
@@ -1082,12 +1098,12 @@ const styles = StyleSheet.create({
     },
     headerStatLabel: {
         fontSize: 10,
-        color: 'rgba(255,255,255,0.45)',
+        color: alphaWhite(0.45),
     },
     headerStatValue: {
         fontSize: 12,
         fontWeight: '600' as const,
-        color: 'rgba(255,255,255,0.8)',
+        color: alphaWhite(0.8),
         fontVariant: ['tabular-nums'],
     },
     headerMetaRow: {
@@ -1096,7 +1112,7 @@ const styles = StyleSheet.create({
     },
     headerMetaText: {
         fontSize: 11,
-        color: 'rgba(255,255,255,0.6)',
+        color: alphaWhite(0.6),
     },
     body: {
         paddingHorizontal: 16,
@@ -1150,7 +1166,7 @@ const styles = StyleSheet.create({
     },
     reorderOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.55)',
+        backgroundColor: alphaBlack(0.55),
         justifyContent: 'center',
         paddingHorizontal: 20,
     },
@@ -1197,7 +1213,7 @@ const styles = StyleSheet.create({
     },
     reorderRowActive: {
         borderColor: Colors.goldDim,
-        backgroundColor: 'rgba(217,191,115,0.12)',
+        backgroundColor: withAlpha(Colors.gold, 0.12),
     },
     reorderRowContent: {
         flexDirection: 'row',
@@ -1226,12 +1242,12 @@ const EOD_CROWN_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <defs>
     <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#FFE48A" />
-      <stop offset="1" stop-color="#D8A43D" />
+      <stop offset="0" stop-color="${eodCrownLight}" />
+      <stop offset="1" stop-color="${eodCrownDark}" />
     </linearGradient>
   </defs>
   <path d="M10 70 L18 28 L38 58 L50 20 L62 58 L82 28 L90 70 Z" fill="url(#g)"/>
-  <rect x="14" y="70" width="72" height="12" rx="3" fill="#C8942E"/>
+  <rect x="14" y="70" width="72" height="12" rx="3" fill="${eodCrownBase}"/>
 </svg>`;
 
 const UNHEARD_BADGE_SOURCE = require('../assets/images/The_Unheard_Icon.webp');

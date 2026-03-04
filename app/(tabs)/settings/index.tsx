@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { Globe } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/colors';
+import Colors, { getModeAccentTheme } from '@/constants/colors';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
 import AccountBindingPanel from '@/components/AccountBindingPanel';
@@ -22,6 +23,19 @@ import { getDebugLogsText } from '@/utils/debugLog';
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { nextLanguage, toggleLanguage, t, language } = useLanguage();
+  const { gameMode, setGameMode } = useGameMode();
+  const pvpAccentTheme = React.useMemo(() => getModeAccentTheme('regular'), []);
+  const pveAccentTheme = React.useMemo(() => getModeAccentTheme('pve'), []);
+  const modeThemeStyles = React.useMemo(() => ({
+    pvpActive: {
+      borderColor: pvpAccentTheme.accentBorder45,
+      backgroundColor: pvpAccentTheme.accentSoft16,
+    },
+    pveActive: {
+      borderColor: pveAccentTheme.accentBorder45,
+      backgroundColor: pveAccentTheme.accentSoft18,
+    },
+  }), [pveAccentTheme, pvpAccentTheme]);
   const l = useCallback((zh: string, en: string, ru: string) => {
     if (language === 'zh') return zh;
     if (language === 'ru') return ru;
@@ -109,7 +123,7 @@ export default function SettingsScreen() {
   }, [l]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <PageHeader
         title={t.settingsTitle}
         subtitle={t.searchHeaderSubtitle}
@@ -141,6 +155,30 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.rowValue}>{nextLanguageCode}</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={[styles.section, { marginTop: sectionGap }]}>
+          <Text style={styles.sectionTitle}>{t.settingsGameMode}</Text>
+          <View style={styles.modeButtonRow}>
+            <TouchableOpacity
+              style={[styles.modeButton, gameMode === 'regular' && modeThemeStyles.pvpActive]}
+              onPress={() => void setGameMode('regular')}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.modeButtonText, gameMode === 'regular' && styles.modeButtonTextActive]}>
+                {t.settingsGameModePvp}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeButton, gameMode === 'pve' && modeThemeStyles.pveActive]}
+              onPress={() => void setGameMode('pve')}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.modeButtonText, gameMode === 'pve' && styles.modeButtonTextActive]}>
+                {t.settingsGameModePve}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.bindWrap, { marginTop: sectionGap }]} onLayout={handleBindWrapLayout}>
@@ -214,6 +252,30 @@ const styles = StyleSheet.create({
   rowValue: {
     fontSize: 14,
     color: Colors.textTertiary,
+  },
+  modeButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeButton: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeButtonText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  modeButtonTextActive: {
+    color: Colors.text,
   },
   bindWrap: {
     marginHorizontal: 20,

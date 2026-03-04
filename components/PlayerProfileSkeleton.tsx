@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import ShimmerBlock from '@/components/ShimmerBlock';
 
@@ -8,21 +9,43 @@ type Props = {
 };
 
 export default function PlayerProfileSkeleton({ showCompactHeaderPlaceholder = false }: Props) {
+  const insets = useSafeAreaInsets();
+  const compactHeaderTopPadding = Math.max(insets.top + 8, 16);
+  const headerTopPadding = Math.max(insets.top + 20, 34);
+  const bottomInsetPadding = Math.max(insets.bottom + 112, 132);
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       {showCompactHeaderPlaceholder ? (
-        <View style={styles.compactHeaderWrap}>
+        <View
+          style={[
+            styles.compactHeaderWrap,
+            {
+              paddingTop: compactHeaderTopPadding,
+              backgroundColor: Colors.surface,
+              borderBottomColor: Colors.border,
+            },
+          ]}
+        >
           <ShimmerBlock width="46%" height={14} />
           <ShimmerBlock width={68} height={10} />
         </View>
       ) : null}
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        style={[styles.scroll, { backgroundColor: Colors.background }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomInsetPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerWrap}>
-          <View style={styles.headerContent}>
+        <View
+          style={[
+            styles.headerWrap,
+            {
+              backgroundColor: Colors.surface,
+              borderBottomColor: Colors.border,
+            },
+          ]}
+        >
+          <View style={[styles.headerContent, { paddingTop: headerTopPadding }]}>
             <ShimmerBlock width="54%" height={30} borderRadius={8} />
             <View style={styles.badgesRow}>
               <ShimmerBlock width={54} height={18} borderRadius={6} />
@@ -42,9 +65,14 @@ export default function PlayerProfileSkeleton({ showCompactHeaderPlaceholder = f
                 <ShimmerBlock width={58} height={13} />
               </View>
             </View>
+            <View style={styles.headerMetaRow}>
+              <ShimmerBlock width="62%" height={10} />
+              <ShimmerBlock width="56%" height={10} />
+              <ShimmerBlock width="48%" height={10} />
+            </View>
           </View>
           <View style={styles.characterPlaceholderWrap}>
-            <ShimmerBlock width={170} height={236} borderRadius={16} />
+            <ShimmerBlock width={140} height={220} />
           </View>
         </View>
 
@@ -98,7 +126,6 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
     backgroundColor: Colors.surface,
     paddingHorizontal: 12,
-    paddingTop: 14,
     paddingBottom: 10,
     gap: 8,
   },
@@ -111,17 +138,20 @@ const styles = StyleSheet.create({
   },
   headerWrap: {
     height: 280,
+    position: 'relative',
     marginHorizontal: 0,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     backgroundColor: Colors.surface,
     overflow: 'hidden',
-    paddingHorizontal: 20,
-    paddingTop: 38,
   },
   headerContent: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 10,
     zIndex: 2,
-    paddingRight: 148,
+    paddingRight: 168,
     gap: 12,
   },
   badgesRow: {
@@ -136,10 +166,18 @@ const styles = StyleSheet.create({
   headerStat: {
     gap: 5,
   },
+  headerMetaRow: {
+    marginTop: 2,
+    gap: 6,
+  },
   characterPlaceholderWrap: {
     position: 'absolute',
-    right: 8,
-    bottom: 2,
+    right: 16,
+    top: 6,
+    bottom: 0,
+    width: 240,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
     zIndex: 1,
   },
   body: {

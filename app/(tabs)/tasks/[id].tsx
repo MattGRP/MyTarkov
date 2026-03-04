@@ -11,8 +11,9 @@ import { useLocalSearchParams, Stack, useRouter, useSegments } from 'expo-router
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ExternalLink, Star } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { localizeObjectiveType, localizeTaskRequirementStatus, localizeTraderName } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchTaskById } from '@/services/tarkovApi';
 import type {
@@ -240,6 +241,8 @@ function ObjectiveRow({
   showLessLabel,
   optionalLabel,
   language,
+  quantityColor,
+  optionalTagStyle,
 }: {
   objective: TaskObjectiveLite;
   onOpenItem: (itemId: string) => void;
@@ -248,6 +251,8 @@ function ObjectiveRow({
   showLessLabel: string;
   optionalLabel: string;
   language: 'en' | 'zh' | 'ru';
+  quantityColor?: string;
+  optionalTagStyle?: object;
 }) {
   const objectiveItems = collectObjectiveItems(objective);
   const objectiveTypeLabel = localizeObjectiveType(objective.type, language);
@@ -263,7 +268,7 @@ function ObjectiveRow({
             <Text style={[styles.objectiveMetaTag, styles.objectiveTypeTag]}>{objectiveTypeLabel}</Text>
           ) : null}
           {objective.optional ? (
-            <Text style={[styles.objectiveMetaTag, styles.objectiveOptionalTag]}>{optionalLabel}</Text>
+            <Text style={[styles.objectiveMetaTag, styles.objectiveOptionalTag, optionalTagStyle]}>{optionalLabel}</Text>
           ) : null}
         </View>
         {objectiveItems.length > 0 ? (
@@ -276,7 +281,7 @@ function ObjectiveRow({
                 imageLink={item.iconLink}
                 onPress={onOpenItem}
                 secondaryText={objective.count && objective.count > 0 ? `x${objective.count}` : undefined}
-                secondaryColor={objective.count && objective.count > 0 ? Colors.gold : undefined}
+                secondaryColor={objective.count && objective.count > 0 ? quantityColor : undefined}
               />
             ))}
             {hasOverflow ? (
@@ -507,6 +512,25 @@ export default function TaskDetailScreen() {
     return raw === '1' || raw === 'true';
   }, [getParam]);
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const wikiButtonTheme = useMemo(() => ({
+    borderColor: accentTheme.accentDim,
+    backgroundColor: accentTheme.accentSoft16,
+  }), [accentTheme]);
+  const objectiveThemeStyles = useMemo(() => ({
+    objectiveSectionCard: {
+      borderColor: accentTheme.accentDim,
+    },
+    objectiveOptionalTag: {
+      color: accentTheme.accent,
+      borderColor: accentTheme.accentBorder45,
+      backgroundColor: accentTheme.accentSoft12,
+    },
+    wikiButtonText: {
+      color: accentTheme.accent,
+    },
+  }), [accentTheme]);
   const router = useRouter();
   const segments = useSegments();
   const isSearchContext = useMemo(() => {
@@ -515,8 +539,8 @@ export default function TaskDetailScreen() {
   }, [segments]);
 
   const taskQuery = useQuery({
-    queryKey: ['task-detail', taskId, language],
-    queryFn: ({ signal }) => fetchTaskById(taskId!, language, { signal }),
+    queryKey: ['task-detail', taskId, language, gameMode],
+    queryFn: ({ signal }) => fetchTaskById(taskId!, language, { signal, gameMode }),
     enabled: !!taskId,
     staleTime: 30 * 60 * 1000,
     retry: 2,
@@ -677,7 +701,7 @@ export default function TaskDetailScreen() {
   const traderName = localizeTraderName(task.trader.name, task.trader.normalizedName, language);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <Stack.Screen options={{ title }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
@@ -692,9 +716,9 @@ export default function TaskDetailScreen() {
             <Text style={styles.heroTitle}>{task.name}</Text>
             <Text style={styles.heroSub}>{task.map?.name || t.taskAnyMap}</Text>
             {!!task.wikiLink && (
-              <TouchableOpacity style={styles.wikiButton} onPress={() => openWiki(task)} activeOpacity={0.75}>
-                <ExternalLink size={14} color={Colors.gold} />
-                <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
+              <TouchableOpacity style={[styles.wikiButton, wikiButtonTheme]} onPress={() => openWiki(task)} activeOpacity={0.75}>
+                <ExternalLink size={14} color={accentTheme.accent} />
+                <Text style={[styles.wikiButtonText, objectiveThemeStyles.wikiButtonText]}>{t.taskOpenWiki}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -738,7 +762,7 @@ export default function TaskDetailScreen() {
           <>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.taskSectionObjectives}</Text>
-          <View style={[styles.sectionCard, styles.objectiveSectionCard]}>
+          <View style={[styles.sectionCard, styles.objectiveSectionCard, objectiveThemeStyles.objectiveSectionCard]}>
             {(task.objectives?.length ?? 0) === 0 ? (
               <InfoRow label={t.taskNoObjectives} value="" isLast />
             ) : (
@@ -751,6 +775,8 @@ export default function TaskDetailScreen() {
                   showLessLabel={t.taskObjectiveShowLess}
                   optionalLabel={t.taskObjectiveOptional}
                   language={language}
+                  quantityColor={accentTheme.accent}
+                  optionalTagStyle={objectiveThemeStyles.objectiveOptionalTag}
                   isLast={idx === (task.objectives?.length ?? 1) - 1}
                 />
               ))
@@ -970,7 +996,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: alphaWhite(0.04),
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
@@ -1029,8 +1055,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    borderColor: Colors.border,
+    backgroundColor: alphaWhite(0.03),
   },
   wikiButtonText: {
     color: Colors.gold,
@@ -1059,14 +1085,14 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   objectiveSectionCard: {
-    borderColor: Colors.goldDim,
+    borderColor: Colors.border,
   },
   subHeader: {
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: alphaWhite(0.02),
   },
   subHeaderText: {
     color: Colors.textSecondary,
@@ -1139,12 +1165,12 @@ const styles = StyleSheet.create({
   objectiveTypeTag: {
     color: Colors.textSecondary,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   objectiveOptionalTag: {
-    color: Colors.gold,
-    borderColor: 'rgba(217,191,115,0.45)',
-    backgroundColor: 'rgba(217,191,115,0.12)',
+    color: Colors.text,
+    borderColor: Colors.border,
+    backgroundColor: alphaWhite(0.03),
   },
   objectiveItemsWrap: {
     flexDirection: 'column',
@@ -1154,7 +1180,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 10,
     paddingVertical: 5,
   },

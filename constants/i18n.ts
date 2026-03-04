@@ -42,6 +42,11 @@ export interface Translations {
   languageValueEn: string;
   languageValueZh: string;
   languageValueRu: string;
+  settingsGameMode: string;
+  settingsGameModePvp: string;
+  settingsGameModePve: string;
+  tabModePvp: string;
+  tabModePve: string;
   defaultPlayerName: string;
   defaultPlayerNamePlaceholder: string;
   defaultPlayerNameHint: string;
@@ -368,12 +373,17 @@ const en: Translations = {
   tabSearch: 'Search',
   tabTasks: 'Tasks',
   tabSettings: 'Settings',
+  tabModePvp: 'PvP',
+  tabModePve: 'PvE',
 
   settingsTitle: 'Settings',
   language: 'Language',
   languageValueEn: 'English',
   languageValueZh: '中文',
   languageValueRu: 'Russian',
+  settingsGameMode: 'Game Mode',
+  settingsGameModePvp: 'PvP (Regular)',
+  settingsGameModePve: 'PvE',
   defaultPlayerName: 'Default player name',
   defaultPlayerNamePlaceholder: 'Enter player name',
   defaultPlayerNameHint: 'Used to prefill the search box.',
@@ -785,12 +795,17 @@ const zh: Translations = {
   tabSearch: '搜索',
   tabTasks: '任务',
   tabSettings: '设置',
+  tabModePvp: 'PvP',
+  tabModePve: 'PvE',
 
   settingsTitle: '设置',
   language: '语言',
   languageValueEn: 'English',
   languageValueZh: '中文',
   languageValueRu: 'Русский',
+  settingsGameMode: '游戏模式',
+  settingsGameModePvp: 'PvP',
+  settingsGameModePve: 'PvE',
   defaultPlayerName: '默认玩家名称',
   defaultPlayerNamePlaceholder: '输入玩家名称',
   defaultPlayerNameHint: '用于预填搜索框。',
@@ -1202,12 +1217,17 @@ const ru: Translations = {
   tabSearch: 'Поиск',
   tabTasks: 'Задания',
   tabSettings: 'Настройки',
+  tabModePvp: 'PvP',
+  tabModePve: 'PvE',
 
   settingsTitle: 'Настройки',
   language: 'Язык',
   languageValueEn: 'English',
   languageValueZh: '中文',
   languageValueRu: 'Русский',
+  settingsGameMode: 'Режим игры',
+  settingsGameModePvp: 'PvP (обычный)',
+  settingsGameModePve: 'PvE',
   defaultPlayerName: 'Имя игрока по умолчанию',
   defaultPlayerNamePlaceholder: 'Введите имя игрока',
   defaultPlayerNameHint: 'Используется для автозаполнения поиска.',

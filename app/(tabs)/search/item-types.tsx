@@ -14,8 +14,9 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackActions, useIsFocused, useNavigation } from '@react-navigation/native';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { localizeCategoryName } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchItemCategories, searchItemsByCategories } from '@/services/tarkovApi';
 import { ItemSearchResult } from '@/types/tarkov';
@@ -82,6 +83,7 @@ function serializeCategoryParam(value?: string): string | undefined {
 
 export default function ItemTypesScreen() {
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -93,6 +95,13 @@ export default function ItemTypesScreen() {
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const themeStyles = useMemo(() => ({
+    sortChipActive: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+  }), [accentTheme]);
 
   const currentCategory = useMemo(
     () => parseCategoryParam(getParamValue(params.category)),
@@ -297,13 +306,14 @@ export default function ItemTypesScreen() {
   }, [tree.parentMap, tree.virtualRoot, validCurrentCategory]);
 
   const itemsQuery = useInfiniteQuery({
-    queryKey: ['item-types-items', language, validCurrentCategory],
+    queryKey: ['item-types-items', language, gameMode, validCurrentCategory],
     queryFn: async ({ pageParam, signal }) => {
       if (!validCurrentCategory) return EMPTY_ITEMS;
       const offset = Math.max(0, Number(pageParam) || 0);
       return searchItemsByCategories({
         categoryNames: [validCurrentCategory],
         language,
+        gameMode,
         limit: ITEM_LIST_PAGE_SIZE,
         offset,
         signal,
@@ -601,7 +611,7 @@ export default function ItemTypesScreen() {
                 return (
                   <TouchableOpacity
                     key={option.key}
-                    style={[styles.sortChip, active && styles.sortChipActive]}
+                    style={[styles.sortChip, active && styles.sortChipActive, active && themeStyles.sortChipActive]}
                     onPress={() => handleSortSelect(option.key)}
                   >
                     <View style={styles.sortChipContent}>
@@ -627,7 +637,7 @@ export default function ItemTypesScreen() {
   const showItemEmpty = !!validCurrentCategory && !itemsQuery.isLoading && sortedItems.length === 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <FlatList
         data={validCurrentCategory ? sortedItems : EMPTY_ITEMS}
         keyExtractor={(item) => item.id}
@@ -735,7 +745,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 10,
     paddingVertical: 8,
     justifyContent: 'center',
@@ -771,11 +781,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   sortChipActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   sortChipContent: {
     flexDirection: 'row',

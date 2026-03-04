@@ -3,20 +3,31 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { getModeAccentTheme } from '@/constants/colors';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
-import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
+import {
+  clearPlayerProfileCache,
+  fetchPlayerProfile,
+  isTurnstileRequiredError,
+  savePlayerSearchToken,
+} from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 import PlayerProfileSkeleton from '@/components/PlayerProfileSkeleton';
+import TurnstileTokenModal from '@/components/TurnstileTokenModal';
 
 export default function PlayerDetailScreen() {
   const { accountId } = useLocalSearchParams<{ accountId: string }>();
   const { t } = useLanguage();
+  const { gameMode } = useGameMode();
+  const accentTheme = React.useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const retryTextStyle = React.useMemo(() => ({ color: accentTheme.accentTextOnSolid }), [accentTheme]);
   const queryClient = useQueryClient();
+  const [tokenModalVisible, setTokenModalVisible] = React.useState(false);
 
   const profileQuery = useQuery({
-    queryKey: ['profile', accountId],
-    queryFn: ({ signal }) => fetchPlayerProfile(accountId!, { signal }),
+    queryKey: ['profile', gameMode, accountId],
+    queryFn: ({ signal }) => fetchPlayerProfile(accountId!, { signal, gameMode }),
     enabled: !!accountId,
     staleTime: 2 * 60 * 1000,
     refetchOnMount: false,
@@ -26,11 +37,42 @@ export default function PlayerDetailScreen() {
 
   const handleRefresh = React.useCallback(async () => {
     if (!accountId) return;
-    clearPlayerProfileCache(accountId);
-    const freshProfile = await fetchPlayerProfile(accountId, { force: true });
-    queryClient.setQueryData(['profile', accountId], freshProfile);
-    await queryClient.invalidateQueries({ queryKey: ['profile', accountId] });
-  }, [accountId, queryClient]);
+    try {
+      clearPlayerProfileCache(accountId);
+      const freshProfile = await fetchPlayerProfile(accountId, { force: true, gameMode });
+      queryClient.setQueryData(['profile', gameMode, accountId], freshProfile);
+      await queryClient.invalidateQueries({ queryKey: ['profile', gameMode, accountId] });
+    } catch (error) {
+      if (isTurnstileRequiredError(error)) {
+        setTokenModalVisible(true);
+      }
+    }
+  }, [accountId, gameMode, queryClient]);
+
+  const handleRetry = React.useCallback(() => {
+    const error = profileQuery.error;
+    if (isTurnstileRequiredError(error)) {
+      setTokenModalVisible(true);
+      return;
+    }
+    void handleRefresh();
+  }, [handleRefresh, profileQuery.error]);
+
+  const handleTokenCaptured = React.useCallback(async (token: string) => {
+    await savePlayerSearchToken(token);
+    setTokenModalVisible(false);
+    await handleRefresh();
+  }, [handleRefresh]);
+
+  const handleTokenError = React.useCallback(() => {
+    setTokenModalVisible(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (profileQuery.isError && isTurnstileRequiredError(profileQuery.error)) {
+      setTokenModalVisible(true);
+    }
+  }, [profileQuery.error, profileQuery.isError]);
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
@@ -42,19 +84,50 @@ export default function PlayerDetailScreen() {
   }
 
   if (profileQuery.isError && !profileQuery.data) {
+    const turnstileError = isTurnstileRequiredError(profileQuery.error);
+    if (turnstileError) {
+      return (
+        <>
+          <Stack.Screen options={{ title: t.playerProfile }} />
+          <PlayerProfileSkeleton />
+          <TurnstileTokenModal
+            visible={tokenModalVisible}
+            onClose={() => setTokenModalVisible(false)}
+            onTokenCaptured={handleTokenCaptured}
+            onError={handleTokenError}
+            searchName="player"
+            gameMode={gameMode}
+            silent
+          />
+        </>
+      );
+    }
     return (
-      <View style={styles.centerContainer}>
-        <Stack.Screen options={{ title: t.playerProfile }} />
-        <AlertTriangle size={44} color={Colors.statOrange} />
-        <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
-        <Text style={styles.errorMessage}>{(profileQuery.error as Error).message}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={handleRefresh}
-        >
-          <Text style={styles.retryText}>{t.retry}</Text>
-        </TouchableOpacity>
-      </View>
+      <>
+        <View style={[styles.centerContainer, { backgroundColor: Colors.background }]}>
+          <Stack.Screen options={{ title: t.playerProfile }} />
+          <AlertTriangle size={44} color={Colors.statOrange} />
+          <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
+          <Text style={styles.errorMessage}>
+            {(profileQuery.error as Error).message}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={handleRetry}
+          >
+            <Text style={[styles.retryText, retryTextStyle]}>{t.retry}</Text>
+          </TouchableOpacity>
+        </View>
+        <TurnstileTokenModal
+          visible={tokenModalVisible}
+          onClose={() => setTokenModalVisible(false)}
+          onTokenCaptured={handleTokenCaptured}
+          onError={handleTokenError}
+          searchName="player"
+          gameMode={gameMode}
+          silent
+        />
+      </>
     );
   }
 
@@ -108,6 +181,6 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#1A1A14',
+    color: Colors.text,
   },
 });

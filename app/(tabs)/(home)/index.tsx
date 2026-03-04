@@ -13,20 +13,31 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, AlertTriangle } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
-import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
+import {
+  clearPlayerProfileCache,
+  fetchPlayerProfile,
+  isTurnstileRequiredError,
+  savePlayerSearchToken,
+} from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 import AccountBindingPanel from '@/components/AccountBindingPanel';
 import PlayerProfileSkeleton from '@/components/PlayerProfileSkeleton';
+import TurnstileTokenModal from '@/components/TurnstileTokenModal';
 
 export default function MyProfileScreen() {
   const { playerAccountId } = useAuth();
+  const { gameMode } = useGameMode();
   const { t } = useLanguage();
+  const accentTheme = React.useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const retryTextStyle = React.useMemo(() => ({ color: accentTheme.accentTextOnSolid }), [accentTheme]);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [tokenModalVisible, setTokenModalVisible] = useState<boolean>(false);
   const spinValue = useRef(new Animated.Value(0)).current;
   const spinAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -54,8 +65,8 @@ export default function MyProfileScreen() {
   });
 
   const profileQuery = useQuery({
-    queryKey: ['profile', playerAccountId],
-    queryFn: ({ signal }) => fetchPlayerProfile(playerAccountId!, { signal }),
+    queryKey: ['profile', gameMode, playerAccountId],
+    queryFn: ({ signal }) => fetchPlayerProfile(playerAccountId!, { signal, gameMode }),
     enabled: !!playerAccountId,
     staleTime: 2 * 60 * 1000,
     refetchOnMount: false,
@@ -68,18 +79,47 @@ export default function MyProfileScreen() {
     setIsRefreshing(true);
     try {
       clearPlayerProfileCache(playerAccountId);
-      const freshProfile = await fetchPlayerProfile(playerAccountId, { force: true });
-      queryClient.setQueryData(['profile', playerAccountId], freshProfile);
-      await queryClient.invalidateQueries({ queryKey: ['profile', playerAccountId] });
+      const freshProfile = await fetchPlayerProfile(playerAccountId, { force: true, gameMode });
+      queryClient.setQueryData(['profile', gameMode, playerAccountId], freshProfile);
+      await queryClient.invalidateQueries({ queryKey: ['profile', gameMode, playerAccountId] });
+    } catch (error) {
+      if (isTurnstileRequiredError(error)) {
+        setTokenModalVisible(true);
+      }
     } finally {
       setIsRefreshing(false);
     }
-  }, [playerAccountId, queryClient]);
+  }, [gameMode, playerAccountId, queryClient]);
+
+  const handleRetry = useCallback(() => {
+    const error = profileQuery.error;
+    if (isTurnstileRequiredError(error)) {
+      setTokenModalVisible(true);
+      return;
+    }
+    void handleRefresh();
+  }, [handleRefresh, profileQuery.error]);
+
+  const handleTokenCaptured = useCallback(async (token: string) => {
+    await savePlayerSearchToken(token);
+    setTokenModalVisible(false);
+    await handleRefresh();
+  }, [handleRefresh]);
+
+  const handleTokenError = useCallback(() => {
+    setTokenModalVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (profileQuery.isError && isTurnstileRequiredError(profileQuery.error)) {
+      setTokenModalVisible(true);
+    }
+  }, [profileQuery.error, profileQuery.isError]);
 
   if (!playerAccountId) {
     return (
       <KeyboardAvoidingView
-        style={styles.unboundContainer}
+        style={[styles.unboundContainer, { backgroundColor: Colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
@@ -106,15 +146,45 @@ export default function MyProfileScreen() {
   }
 
   if (profileQuery.isError && !profileQuery.data) {
+    const turnstileError = isTurnstileRequiredError(profileQuery.error);
+    if (turnstileError) {
+      return (
+        <>
+          <PlayerProfileSkeleton showCompactHeaderPlaceholder />
+          <TurnstileTokenModal
+            visible={tokenModalVisible}
+            onClose={() => setTokenModalVisible(false)}
+            onTokenCaptured={handleTokenCaptured}
+            onError={handleTokenError}
+            searchName="player"
+            gameMode={gameMode}
+            silent
+          />
+        </>
+      );
+    }
     return (
-      <View style={styles.centerContainer}>
-        <AlertTriangle size={44} color={Colors.statOrange} />
-        <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
-        <Text style={styles.errorMessage}>{(profileQuery.error as Error).message}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-          <Text style={styles.retryText}>{t.retry}</Text>
-        </TouchableOpacity>
-      </View>
+      <>
+        <View style={[styles.centerContainer, { backgroundColor: Colors.background }]}>
+          <AlertTriangle size={44} color={Colors.statOrange} />
+          <Text style={styles.errorTitle}>{t.failedToLoad}</Text>
+          <Text style={styles.errorMessage}>
+            {(profileQuery.error as Error).message}
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Text style={[styles.retryText, retryTextStyle]}>{t.retry}</Text>
+          </TouchableOpacity>
+        </View>
+        <TurnstileTokenModal
+          visible={tokenModalVisible}
+          onClose={() => setTokenModalVisible(false)}
+          onTokenCaptured={handleTokenCaptured}
+          onError={handleTokenError}
+          searchName="player"
+          gameMode={gameMode}
+          silent
+        />
+      </>
     );
   }
 
@@ -176,13 +246,13 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#1A1A14',
+    color: Colors.text,
   },
   settingsButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: alphaWhite(0.1),
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { alphaBlack } from '@/constants/colors';
+import { GameMode, normalizeGameMode } from '@/constants/gameMode';
 import { logInfo, logWarn } from '@/utils/debugLog';
 
 interface TurnstileTokenWebViewModalProps {
@@ -11,6 +13,7 @@ interface TurnstileTokenWebViewModalProps {
   searchName?: string;
   silent?: boolean;
   timeoutMs?: number;
+  gameMode?: GameMode;
 }
 
 type TokenEngineMode = 'players' | 'standalone';
@@ -22,7 +25,7 @@ interface TokenEngineStep {
   sourceBase: string;
 }
 
-const PLAYER_PAGE_URL = 'https://tarkov.dev/players?gameMode=regular';
+const PLAYER_PAGE_URL_BASE = 'https://tarkov.dev/players';
 const HOME_PAGE_URL = 'https://tarkov.dev/';
 const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_SEARCH_QUERY = 'player';
@@ -33,14 +36,18 @@ const TOKEN_WEBVIEW_USER_AGENT = Platform.select({
   default: undefined,
 });
 
-function buildEnginePlan(timeoutMs: number): TokenEngineStep[] {
+function buildPlayersUrl(gameMode: GameMode): string {
+  return `${PLAYER_PAGE_URL_BASE}?gameMode=${encodeURIComponent(normalizeGameMode(gameMode))}`;
+}
+
+function buildEnginePlan(timeoutMs: number, playersUrl: string): TokenEngineStep[] {
   if (Platform.OS !== 'android') {
     return [
       {
         id: 'players-ios',
         mode: 'players',
         timeoutMs,
-        sourceBase: PLAYER_PAGE_URL,
+        sourceBase: playersUrl,
       },
     ];
   }
@@ -49,7 +56,7 @@ function buildEnginePlan(timeoutMs: number): TokenEngineStep[] {
       id: 'players-offscreen',
       mode: 'players',
       timeoutMs: Math.min(timeoutMs, 24_000),
-      sourceBase: PLAYER_PAGE_URL,
+      sourceBase: playersUrl,
     },
     {
       id: 'home-offscreen',
@@ -61,7 +68,7 @@ function buildEnginePlan(timeoutMs: number): TokenEngineStep[] {
       id: 'players-retry',
       mode: 'players',
       timeoutMs: Math.min(timeoutMs, 20_000),
-      sourceBase: PLAYER_PAGE_URL,
+      sourceBase: playersUrl,
     },
   ];
 }
@@ -513,13 +520,21 @@ export default function TurnstileTokenWebViewModal({
   searchName,
   silent = true,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  gameMode = 'regular',
 }: TurnstileTokenWebViewModalProps) {
   const capturedRef = useRef(false);
   const webViewRef = useRef<WebView | null>(null);
   const [engineIndex, setEngineIndex] = useState(0);
   const [engineEpoch, setEngineEpoch] = useState(0);
   const engineIndexRef = useRef(0);
-  const enginePlan = useMemo(() => buildEnginePlan(timeoutMs), [timeoutMs]);
+  const playersUrl = useMemo(
+    () => buildPlayersUrl(gameMode),
+    [gameMode],
+  );
+  const enginePlan = useMemo(
+    () => buildEnginePlan(timeoutMs, playersUrl),
+    [playersUrl, timeoutMs],
+  );
   const currentEngine = enginePlan[Math.min(engineIndex, enginePlan.length - 1)];
   const injectedScript = useMemo(
     () => buildInjectedScript(searchName, currentEngine.mode),
@@ -786,7 +801,7 @@ const styles = StyleSheet.create({
   },
   debugWrap: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: alphaBlack(1),
   },
   debugWebView: {
     flex: 1,

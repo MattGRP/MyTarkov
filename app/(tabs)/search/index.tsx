@@ -7,8 +7,9 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Colors from '@/constants/colors';
+import Colors, { alphaBlack, alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { localizeBossName, localizeCategoryName, localizeTraderName } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import {
   fetchItemCategories,
@@ -97,6 +98,7 @@ function isAbortRequestError(error: unknown): boolean {
 
 export default function SearchScreen() {
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isAndroid = Platform.OS === 'android';
@@ -104,7 +106,7 @@ export default function SearchScreen() {
   const [headerHeight, setHeaderHeight] = useState<number>(() => getPageHeaderEstimatedHeight(insets.top, true));
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('item');
+  const [searchMode, setSearchMode] = useState<SearchMode>(SEARCH_MODE_ORDER[0]);
   const [searchText, setSearchText] = useState<string>('');
   const [inputError, setInputError] = useState<string>('');
 
@@ -149,6 +151,7 @@ export default function SearchScreen() {
   const [hasRetriedWithFreshToken, setHasRetriedWithFreshToken] = useState(false);
   const itemSearchAbortRef = useRef<AbortController | null>(null);
   const playerSearchAbortRef = useRef<AbortController | null>(null);
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
 
   const itemSearchMutation = useMutation({
     mutationFn: async (query: string) => {
@@ -156,7 +159,7 @@ export default function SearchScreen() {
       const controller = new AbortController();
       itemSearchAbortRef.current = controller;
       try {
-        return await searchItems(query, language, { signal: controller.signal });
+        return await searchItems(query, language, { signal: controller.signal, gameMode });
       } finally {
         if (itemSearchAbortRef.current === controller) {
           itemSearchAbortRef.current = null;
@@ -189,7 +192,7 @@ export default function SearchScreen() {
 
       if (isAccountIdQuery) {
         try {
-          const profile = await fetchPlayerProfile(trimmed, { signal: controller.signal });
+          const profile = await fetchPlayerProfile(trimmed, { signal: controller.signal, gameMode });
           return [{ id: trimmed, name: profile.info.nickname }];
         } finally {
           if (playerSearchAbortRef.current === controller) {
@@ -199,7 +202,7 @@ export default function SearchScreen() {
       }
 
       try {
-        return await searchPlayers(trimmed, { signal: controller.signal });
+        return await searchPlayers(trimmed, { signal: controller.signal, gameMode });
       } finally {
         if (playerSearchAbortRef.current === controller) {
           playerSearchAbortRef.current = null;
@@ -238,8 +241,8 @@ export default function SearchScreen() {
   });
 
   const tasksQuery = useQuery({
-    queryKey: ['tasks', language],
-    queryFn: ({ signal }) => fetchTaskSummaries(language, { signal }),
+    queryKey: ['tasks', language, gameMode],
+    queryFn: ({ signal }) => fetchTaskSummaries(language, { signal, gameMode }),
     enabled: isFocused && searchMode === 'task',
     staleTime: 30 * 60 * 1000,
     retry: 2,
@@ -249,8 +252,8 @@ export default function SearchScreen() {
   const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
 
   const tradersQuery = useQuery({
-    queryKey: ['traders', language],
-    queryFn: ({ signal }) => fetchTraders(language, { signal }),
+    queryKey: ['traders', language, gameMode],
+    queryFn: ({ signal }) => fetchTraders(language, { signal, gameMode }),
     enabled: isFocused && searchMode === 'trader',
     staleTime: 30 * 60 * 1000,
     retry: 2,
@@ -260,8 +263,8 @@ export default function SearchScreen() {
   const allTraders = useMemo(() => tradersQuery.data ?? [], [tradersQuery.data]);
 
   const bossesQuery = useQuery({
-    queryKey: ['bosses', language],
-    queryFn: ({ signal }) => fetchBosses(language, { signal }),
+    queryKey: ['bosses', language, gameMode],
+    queryFn: ({ signal }) => fetchBosses(language, { signal, gameMode }),
     enabled: isFocused && searchMode === 'boss',
     staleTime: 30 * 60 * 1000,
     refetchOnMount: false,
@@ -1079,6 +1082,44 @@ export default function SearchScreen() {
     setTaskFactionModalOpen(false);
   }, [draftTaskFactions]);
   const draftTaskFactionSet = useMemo(() => new Set(draftTaskFactions), [draftTaskFactions]);
+  const themeStyles = useMemo(() => ({
+    modeChipActive: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    sortFilterActive: {
+      borderColor: accentTheme.accent,
+      backgroundColor: accentTheme.accentSoft15,
+    },
+    actionButton: {
+      borderColor: accentTheme.accentDim,
+      backgroundColor: accentTheme.accentSoft12,
+    },
+    playerAvatar: {
+      backgroundColor: accentTheme.accentSoft12,
+    },
+    taskGoldChip: {
+      borderColor: accentTheme.accentDim,
+      backgroundColor: accentTheme.accentSoft16,
+    },
+    taskGoldText: {
+      color: accentTheme.accent,
+    },
+    taskBlueChip: {
+      borderColor: accentTheme.accentBorder45,
+      backgroundColor: accentTheme.accentSoft18,
+    },
+    taskBlueText: {
+      color: accentTheme.accentTextStrong,
+    },
+    primaryAction: {
+      backgroundColor: accentTheme.accent,
+      borderColor: accentTheme.accent,
+    },
+    primaryActionText: {
+      color: accentTheme.accentTextOnSolid,
+    },
+  }), [accentTheme]);
 
   const renderItemResult = useCallback(({ item }: { item: ItemSearchResult }) => {
     const change = item.changeLast48hPercent ?? 0;
@@ -1129,7 +1170,7 @@ export default function SearchScreen() {
       onPress={() => handleOpenPlayer(item)}
       activeOpacity={0.7}
     >
-      <View style={styles.playerAvatar}>
+      <View style={[styles.playerAvatar, themeStyles.playerAvatar]}>
         <User size={20} color={Colors.gold} />
       </View>
       <View style={styles.playerInfo}>
@@ -1140,7 +1181,7 @@ export default function SearchScreen() {
       </View>
       <ChevronRight size={18} color={Colors.textSecondary} />
     </TouchableOpacity>
-  ), [handleOpenPlayer]);
+  ), [handleOpenPlayer, themeStyles.playerAvatar]);
 
   const renderPlayerResult = useCallback(({ item }: { item: SearchResult }) => {
     return (
@@ -1264,13 +1305,13 @@ export default function SearchScreen() {
                 <Text style={styles.taskStatText}>{getTaskXp(item)}</Text>
               </View>
               {item.kappaRequired ? (
-                <View style={[styles.taskStatChip, styles.taskStatChipGold]}>
-                  <Text style={[styles.taskStatText, styles.taskStatChipGoldText]}>{t.taskTag3x4}</Text>
+                <View style={[styles.taskStatChip, styles.taskStatChipGold, themeStyles.taskGoldChip]}>
+                  <Text style={[styles.taskStatText, styles.taskStatChipGoldText, themeStyles.taskGoldText]}>{t.taskTag3x4}</Text>
                 </View>
               ) : null}
               {item.lightkeeperRequired ? (
-                <View style={[styles.taskStatChip, styles.taskStatChipBlue]}>
-                  <Text style={[styles.taskStatText, styles.taskStatChipBlueText]}>{t.taskTagLightkeeper}</Text>
+                <View style={[styles.taskStatChip, styles.taskStatChipBlue, themeStyles.taskBlueChip]}>
+                  <Text style={[styles.taskStatText, styles.taskStatChipBlueText, themeStyles.taskBlueText]}>{t.taskTagLightkeeper}</Text>
                 </View>
               ) : null}
             </View>
@@ -1281,7 +1322,18 @@ export default function SearchScreen() {
         </TouchableOpacity>
       </View>
     );
-  }, [handleOpenTask, language, t.level, t.taskAnyMap, t.taskTag3x4, t.taskTagLightkeeper]);
+  }, [
+    handleOpenTask,
+    language,
+    t.level,
+    t.taskAnyMap,
+    t.taskTag3x4,
+    t.taskTagLightkeeper,
+    themeStyles.taskBlueChip,
+    themeStyles.taskBlueText,
+    themeStyles.taskGoldChip,
+    themeStyles.taskGoldText,
+  ]);
 
   const renderItemSkeletonRows = useCallback((count = 6) => (
     <View style={styles.skeletonListWrap}>
@@ -1304,14 +1356,14 @@ export default function SearchScreen() {
         </View>
       ))}
     </View>
-  ), []);
+  ), [themeStyles.playerAvatar]);
 
   const renderPlayerSkeletonRows = useCallback((count = 6) => (
     <View style={styles.skeletonListWrap}>
       {Array.from({ length: count }).map((_, index) => (
         <View key={`player-skeleton-${index}`} style={styles.resultRowWrap}>
           <View style={styles.playerRow}>
-            <View style={styles.playerAvatar}>
+            <View style={[styles.playerAvatar, themeStyles.playerAvatar]}>
               <ShimmerBlock width={20} height={20} borderRadius={10} />
             </View>
             <View style={styles.playerInfo}>
@@ -1464,7 +1516,7 @@ export default function SearchScreen() {
             return (
               <TouchableOpacity
                 key={mode}
-                style={[styles.modeButton, active && styles.modeButtonActive]}
+                style={[styles.modeButton, active && styles.modeButtonActive, active && themeStyles.modeChipActive]}
                 onPress={() => handleModeChange(mode)}
                 activeOpacity={0.8}
               >
@@ -1509,7 +1561,7 @@ export default function SearchScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity onPress={handleSearch} style={styles.searchActionButton} activeOpacity={0.7}>
+          <TouchableOpacity onPress={handleSearch} style={[styles.searchActionButton, themeStyles.actionButton]} activeOpacity={0.7}>
             <ChevronRight size={22} color={Colors.gold} />
           </TouchableOpacity>
         </View>
@@ -1590,7 +1642,7 @@ export default function SearchScreen() {
                   return (
                     <TouchableOpacity
                       key={opt.key}
-                      style={[styles.sortChip, active && styles.sortChipActive]}
+                      style={[styles.sortChip, active && styles.sortChipActive, active && themeStyles.sortFilterActive]}
                       onPress={() => handleSortSelect(opt.key)}
                     >
                       <View style={styles.sortChipContent}>
@@ -1606,7 +1658,11 @@ export default function SearchScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.categoryButton} onPress={openCategoryModal} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[styles.categoryButton, effectiveCategories.length > 0 && themeStyles.sortFilterActive]}
+              onPress={openCategoryModal}
+              activeOpacity={0.7}
+            >
               <Filter size={14} color={Colors.textSecondary} />
               <Text style={styles.categoryButtonText}>
                 {t.searchFilterCategory}{effectiveCategories.length > 0 ? ` (${effectiveCategories.length})` : ''}
@@ -1619,25 +1675,41 @@ export default function SearchScreen() {
       {searchMode === 'task' && (
         <View style={styles.taskFiltersSection}>
           <View style={styles.taskFilterButtonRow}>
-            <TouchableOpacity style={styles.categoryButton} onPress={openTaskTraderModal} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={[styles.categoryButton, selectedTaskTraders.length > 0 && themeStyles.sortFilterActive]}
+              onPress={openTaskTraderModal}
+              activeOpacity={0.75}
+            >
               <Filter size={14} color={Colors.textSecondary} />
               <Text style={styles.categoryButtonText}>
                 {t.taskFilterTrader}{selectedTaskTraders.length > 0 ? ` (${selectedTaskTraders.length})` : ''}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.categoryButton} onPress={openTaskLevelModal} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={[styles.categoryButton, selectedTaskLevels.length > 0 && themeStyles.sortFilterActive]}
+              onPress={openTaskLevelModal}
+              activeOpacity={0.75}
+            >
               <Filter size={14} color={Colors.textSecondary} />
               <Text style={styles.categoryButtonText}>
                 {t.taskFilterLevel}{selectedTaskLevels.length > 0 ? ` (${selectedTaskLevels.length})` : ''}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.categoryButton} onPress={openTaskMapModal} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={[styles.categoryButton, selectedTaskMaps.length > 0 && themeStyles.sortFilterActive]}
+              onPress={openTaskMapModal}
+              activeOpacity={0.75}
+            >
               <Filter size={14} color={Colors.textSecondary} />
               <Text style={styles.categoryButtonText}>
                 {t.taskFilterMap}{selectedTaskMaps.length > 0 ? ` (${selectedTaskMaps.length})` : ''}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.categoryButton} onPress={openTaskFactionModal} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={[styles.categoryButton, selectedTaskFactions.length > 0 && themeStyles.sortFilterActive]}
+              onPress={openTaskFactionModal}
+              activeOpacity={0.75}
+            >
               <Filter size={14} color={Colors.textSecondary} />
               <Text style={styles.categoryButtonText}>
                 {t.taskFilterFaction}{selectedTaskFactions.length > 0 ? ` (${selectedTaskFactions.length})` : ''}
@@ -1650,7 +1722,7 @@ export default function SearchScreen() {
             contentContainerStyle={styles.taskQuickToggleRow}
           >
             <TouchableOpacity
-              style={[styles.sortChip, only3x4Required && styles.sortChipActive]}
+              style={[styles.sortChip, only3x4Required && styles.sortChipActive, only3x4Required && themeStyles.sortFilterActive]}
               onPress={() => setOnly3x4Required((prev) => !prev)}
               activeOpacity={0.75}
             >
@@ -1659,7 +1731,11 @@ export default function SearchScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.sortChip, onlyLightkeeperRequired && styles.sortChipActive]}
+              style={[
+                styles.sortChip,
+                onlyLightkeeperRequired && styles.sortChipActive,
+                onlyLightkeeperRequired && themeStyles.sortFilterActive,
+              ]}
               onPress={() => setOnlyLightkeeperRequired((prev) => !prev)}
               activeOpacity={0.75}
             >
@@ -1675,7 +1751,7 @@ export default function SearchScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       {searchMode === 'item' ? (
         <FlatList
           data={visibleItemResults}
@@ -1813,7 +1889,7 @@ export default function SearchScreen() {
                     return (
                       <TouchableOpacity
                         key={category}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.sortFilterActive]}
                         onPress={() => toggleDraftCategory(category)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -1832,8 +1908,8 @@ export default function SearchScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeCategoryModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyCategoryFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyCategoryFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -1859,7 +1935,7 @@ export default function SearchScreen() {
                     return (
                       <TouchableOpacity
                         key={trader.key}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.sortFilterActive]}
                         onPress={() => toggleDraftTaskTrader(trader.key)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -1878,8 +1954,8 @@ export default function SearchScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeTaskTraderModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyTaskTraderFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyTaskTraderFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -1905,7 +1981,7 @@ export default function SearchScreen() {
                     return (
                       <TouchableOpacity
                         key={`task-level-${level}`}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.sortFilterActive]}
                         onPress={() => toggleDraftTaskLevel(level)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -1924,8 +2000,8 @@ export default function SearchScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeTaskLevelModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyTaskLevelFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyTaskLevelFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -1951,7 +2027,7 @@ export default function SearchScreen() {
                     return (
                       <TouchableOpacity
                         key={`task-map-${map.key}`}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.sortFilterActive]}
                         onPress={() => toggleDraftTaskMap(map.key)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -1970,8 +2046,8 @@ export default function SearchScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeTaskMapModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyTaskMapFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyTaskMapFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -1997,7 +2073,7 @@ export default function SearchScreen() {
                     return (
                       <TouchableOpacity
                         key={`task-faction-${faction.key}`}
-                        style={[styles.filterChip, selected && styles.filterChipActive]}
+                        style={[styles.filterChip, selected && styles.filterChipActive, selected && themeStyles.sortFilterActive]}
                         onPress={() => toggleDraftTaskFaction(faction.key)}
                       >
                         <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
@@ -2016,8 +2092,8 @@ export default function SearchScreen() {
               <TouchableOpacity style={styles.modalAction} onPress={closeTaskFactionModal}>
                 <Text style={styles.modalActionText}>{t.cancel}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary]} onPress={applyTaskFactionFilter}>
-                <Text style={[styles.modalActionText, styles.modalActionPrimaryText]}>{t.apply}</Text>
+              <TouchableOpacity style={[styles.modalAction, styles.modalActionPrimary, themeStyles.primaryAction]} onPress={applyTaskFactionFilter}>
+                <Text style={[styles.modalActionText, styles.modalActionPrimaryText, themeStyles.primaryActionText]}>{t.apply}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -2039,6 +2115,7 @@ export default function SearchScreen() {
           onTokenCaptured={handleTokenCaptured}
           onError={handleTokenCaptureError}
           searchName={(pendingPlayerQuery || searchText || 'player').trim()}
+          gameMode={gameMode}
           silent
         />
       )}
@@ -2072,13 +2149,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   modeButtonActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   modeButtonText: {
     fontSize: 12,
@@ -2130,7 +2207,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
@@ -2202,11 +2279,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   sortChipActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   sortChipContent: {
     flexDirection: 'row',
@@ -2230,7 +2307,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   categoryButtonText: {
     fontSize: 12,
@@ -2257,7 +2334,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
     paddingHorizontal: 10,
     paddingVertical: 8,
     justifyContent: 'center',
@@ -2316,7 +2393,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: alphaWhite(0.08),
   },
   resultInfo: {
     flex: 1,
@@ -2367,7 +2444,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(217,191,115,0.12)',
+    backgroundColor: alphaWhite(0.12),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2457,7 +2534,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: alphaWhite(0.08),
   },
   taskMain: {
     flex: 1,
@@ -2524,15 +2601,15 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   taskStatChipGold: {
     borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.03),
   },
   taskStatChipBlue: {
-    borderColor: 'rgba(75,157,255,0.45)',
-    backgroundColor: 'rgba(75,157,255,0.18)',
+    borderColor: alphaWhite(0.45),
+    backgroundColor: alphaWhite(0.18),
   },
   taskStatText: {
     color: Colors.textSecondary,
@@ -2543,7 +2620,7 @@ const styles = StyleSheet.create({
     color: Colors.gold,
   },
   taskStatChipBlueText: {
-    color: '#73B5FF',
+    color: Colors.text,
   },
   taskChevronWrap: {
     alignSelf: 'center',
@@ -2569,7 +2646,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: alphaBlack(0.6),
     padding: 20,
     justifyContent: 'center',
   },
@@ -2600,11 +2677,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: alphaWhite(0.03),
   },
   filterChipActive: {
     borderColor: Colors.gold,
-    backgroundColor: 'rgba(217,191,115,0.15)',
+    backgroundColor: alphaWhite(0.03),
   },
   filterChipText: {
     fontSize: 12,
@@ -2635,7 +2712,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.gold,
   },
   modalActionPrimaryText: {
-    color: '#1A1A14',
+    color: Colors.text,
     fontWeight: '600' as const,
   },
 });

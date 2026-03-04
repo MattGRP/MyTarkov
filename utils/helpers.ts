@@ -1,3 +1,5 @@
+import Colors from '@/constants/colors';
+
 export function formatNumber(n: number): string {
   if (n >= 1_000_000) {
     return `${(n / 1_000_000).toFixed(1)}M`;
@@ -55,27 +57,27 @@ export function getSkillColor(id: string): string {
     case 'Endurance':
     case 'Strength':
     case 'CovertMovement':
-      return '#42A5F5';
+      return Colors.statBlue;
     case 'Vitality':
     case 'Health':
     case 'Immunity':
     case 'Surgery':
-      return '#E85450';
+      return Colors.statRed;
     case 'StressResistance':
-      return '#AB47BC';
+      return Colors.statPurple;
     case 'Metabolism':
-      return '#4CAF50';
+      return Colors.statGreen;
     case 'Perception':
     case 'Attention':
     case 'Search':
-      return '#26C6DA';
+      return Colors.statCyan;
     case 'Charisma':
-      return '#EC407A';
+      return Colors.statPink;
     case 'AimDrills':
     case 'TroubleShooting':
-      return '#FF9800';
+      return Colors.statOrange;
     default:
-      return '#D9BF73';
+      return Colors.gold;
   }
 }
 

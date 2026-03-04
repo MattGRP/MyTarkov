@@ -1,3 +1,5 @@
+import { GameMode } from '@/constants/gameMode';
+
 export interface TurnstileTokenModalProps {
   visible: boolean;
   onClose?: () => void;
@@ -6,4 +8,5 @@ export interface TurnstileTokenModalProps {
   searchName?: string;
   silent?: boolean;
   timeoutMs?: number;
+  gameMode?: GameMode;
 }

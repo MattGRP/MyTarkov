@@ -13,8 +13,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import Svg, { Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { AlertTriangle, ExternalLink, Store } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
 import { localizeCategoryName, localizeTraderName } from '@/constants/i18n';
+import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchItemDetail, fetchTraders } from '@/services/tarkovApi';
 import { ItemDetail, ItemDetailProperties, ItemPriceEntry } from '@/types/tarkov';
@@ -159,20 +160,26 @@ export default function ItemDetailScreen() {
     wikiLink,
   ]);
   const { t, language } = useLanguage();
+  const { gameMode } = useGameMode();
+  const accentTheme = useMemo(() => getModeAccentTheme(gameMode), [gameMode]);
+  const wikiButtonTheme = useMemo(() => ({
+    borderColor: accentTheme.accentDim,
+    backgroundColor: accentTheme.accentSoft16,
+  }), [accentTheme]);
   const router = useRouter();
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [historyChartWidth, setHistoryChartWidth] = useState(0);
 
   const itemQuery = useQuery({
-    queryKey: ['item-detail', itemId, language],
-    queryFn: ({ signal }) => fetchItemDetail(itemId!, language, { signal }),
+    queryKey: ['item-detail', itemId, language, gameMode],
+    queryFn: ({ signal }) => fetchItemDetail(itemId!, language, { signal, gameMode }),
     enabled: !!itemId,
     staleTime: 5 * 60 * 1000,
   });
   const tradersQuery = useQuery({
-    queryKey: ['traders', language],
-    queryFn: ({ signal }) => fetchTraders(language, { signal }),
+    queryKey: ['traders', language, gameMode],
+    queryFn: ({ signal }) => fetchTraders(language, { signal, gameMode }),
     staleTime: 30 * 60 * 1000,
   });
 
@@ -527,7 +534,7 @@ export default function ItemDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <Stack.Screen options={{ title }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {!!data && (
@@ -550,7 +557,7 @@ export default function ItemDetailScreen() {
                 <Text style={styles.heroSub}>{heroAliasText}</Text>
                 <Text style={styles.heroSub}>{heroCategoryText}</Text>
                 {data.wikiLink ? (
-                  <TouchableOpacity style={styles.wikiButton} onPress={openWiki} activeOpacity={0.75}>
+                  <TouchableOpacity style={[styles.wikiButton, wikiButtonTheme]} onPress={openWiki} activeOpacity={0.75}>
                     <ExternalLink size={14} color={Colors.gold} />
                     <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
                   </TouchableOpacity>
@@ -711,7 +718,7 @@ export default function ItemDetailScreen() {
                           y1={tick.y}
                           x2={historyChartGeometry.plotX + historyChartGeometry.plotWidth}
                           y2={tick.y}
-                          stroke={index === 1 ? Colors.border : 'rgba(255,255,255,0.08)'}
+                          stroke={index === 1 ? Colors.border : alphaWhite(0.08)}
                           strokeWidth={1}
                         />
                       ))}
@@ -868,7 +875,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.goldDim,
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.03),
   },
   wikiButtonText: {
     color: Colors.gold,
@@ -928,7 +935,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(217,191,115,0.16)',
+    backgroundColor: alphaWhite(0.16),
   },
   rowLabel: {
     color: Colors.textSecondary,

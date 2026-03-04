@@ -3,7 +3,9 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Colors from '@/constants/colors';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
+import { GameModeProvider, useGameMode } from '@/providers/GameModeProvider';
 import { LanguageProvider } from '@/providers/LanguageProvider';
 import PlayerSearchTokenBootstrap from '@/components/PlayerSearchTokenBootstrap';
 import TasksBootstrap from '@/components/TasksBootstrap';
@@ -15,11 +17,12 @@ const queryClient = new QueryClient();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoading } = useAuth();
+  const { isLoadingGameMode } = useGameMode();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || isLoadingGameMode) return;
 
     const firstSegment = segments[0] as string | undefined;
     const inTabs = firstSegment === '(tabs)';
@@ -27,9 +30,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!inTabs) {
       router.replace('/(tabs)/(home)' as never);
     }
-  }, [isLoading, segments, router]);
+  }, [isLoading, isLoadingGameMode, segments, router]);
 
-  if (isLoading) {
+  if (isLoading || isLoadingGameMode) {
     return (
       <FullscreenSkeleton />
     );
@@ -40,9 +43,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+    <Stack
+      screenOptions={{
+        headerBackTitle: 'Back',
+        contentStyle: { backgroundColor: Colors.background },
+      }}
+    >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
+  );
+}
+
+function ThemedRootShell({ children }: { children: React.ReactNode }) {
+  return (
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: Colors.background }}
+    >
+      {children}
+    </GestureHandlerRootView>
   );
 }
 
@@ -53,17 +71,19 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <LanguageProvider>
-          <AuthProvider>
-            <PlayerSearchTokenBootstrap />
-            <TasksBootstrap />
-            <AuthGate>
-              <RootLayoutNav />
-            </AuthGate>
-          </AuthProvider>
-        </LanguageProvider>
-      </GestureHandlerRootView>
+      <LanguageProvider>
+        <GameModeProvider>
+          <ThemedRootShell>
+            <AuthProvider>
+              <AuthGate>
+                <PlayerSearchTokenBootstrap />
+                <TasksBootstrap />
+                <RootLayoutNav />
+              </AuthGate>
+            </AuthProvider>
+          </ThemedRootShell>
+        </GameModeProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   );
 }

@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Shield, Package } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
-import Colors from '@/constants/colors';
+import Colors, { alphaWhite } from '@/constants/colors';
 import { useLanguage } from '@/providers/LanguageProvider';
 import type { Language } from '@/constants/i18n';
 import FullScreenImageModal from '@/components/FullScreenImageModal';
@@ -943,14 +943,14 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: alphaWhite(0.18),
   },
   gridLineHorizontal: {
     position: 'absolute',
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: alphaWhite(0.18),
   },
   equipInfo: {
     flex: 1,
