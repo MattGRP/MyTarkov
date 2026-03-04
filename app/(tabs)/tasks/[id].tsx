@@ -967,6 +967,8 @@ export default function TaskDetailScreen() {
   );
 }
 
+const ROW_DIVIDER_HEIGHT = StyleSheet.hairlineWidth;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1135,7 +1137,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   rowDivider: {
-    height: StyleSheet.hairlineWidth,
+    height: ROW_DIVIDER_HEIGHT,
     backgroundColor: Colors.border,
   },
   objectiveRow: {

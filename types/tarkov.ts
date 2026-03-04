@@ -528,20 +528,6 @@ export const MAIN_SLOTS = [
   'Backpack', 'SecuredContainer', 'Scabbard',
 ] as const;
 
-export function getSlotDisplayName(slot: string): string {
-  const map: Record<string, string> = {
-    FirstPrimaryWeapon: 'Primary',
-    SecondPrimaryWeapon: 'Secondary',
-    Holster: 'Sidearm',
-    ArmorVest: 'Armor',
-    TacticalVest: 'Rig',
-    FaceCover: 'Face Cover',
-    SecuredContainer: 'Secure',
-    ArmBand: 'Armband',
-  };
-  return map[slot] ?? slot;
-}
-
 export function getItemImageURL(tpl: string): string {
   return `https://assets.tarkov.dev/${tpl}-icon.webp`;
 }
@@ -574,7 +560,7 @@ export function getCharacterImageURL(
   const itemsToRender = compact
     ? (() => {
       const excludedIds = new Set<string>();
-      const compactItems: Array<Record<string, string>> = [];
+      const compactItems: Record<string, string>[] = [];
       for (const item of equipmentItems) {
         if (
           (item.parentId && excludedIds.has(item.parentId)) ||

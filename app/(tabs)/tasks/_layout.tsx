@@ -1,3 +1,4 @@
+// noinspection JSUnusedGlobalSymbols
 import { Stack } from 'expo-router';
 import React from 'react';
 import Colors from '@/constants/colors';

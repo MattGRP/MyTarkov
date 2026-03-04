@@ -1,3 +1,4 @@
+// noinspection SpellCheckingInspection
 export type BossNarrativeMap = Record<string, { bio: string; description: string }>;
 
 export const BOSS_NARRATIVE_TRANSLATIONS: Record<'en' | 'zh' | 'ru', BossNarrativeMap> = {

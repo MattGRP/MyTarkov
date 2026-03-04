@@ -170,9 +170,8 @@ export default function TasksScreen() {
         return selectedFactionSet.has(getFactionKey(task.factionName));
       })
       .filter((task) => {
-        if (only3x4Required && !task.kappaRequired) return false;
-        if (onlyLightkeeperRequired && !task.lightkeeperRequired) return false;
-        return true;
+        return (!only3x4Required || !!task.kappaRequired)
+          && (!onlyLightkeeperRequired || !!task.lightkeeperRequired);
       })
       .filter((task) => {
         if (!query) return true;

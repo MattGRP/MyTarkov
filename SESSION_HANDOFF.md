@@ -1,3 +1,4 @@
+<!--suppress GrazieInspection,MarkdownIncorrectlyNumberedListItem,SpellCheckingInspection -->
 # MyTarkov Project Knowledge Base
 
 > 目标：给任何新会话/新协作者一个“可直接进入开发”的项目总览，而不是一次对话的流水记录。

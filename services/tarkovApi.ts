@@ -62,10 +62,6 @@ function resolveGameMode(gameMode?: GameMode): GameMode {
   return normalizeGameMode(gameMode ?? activeGameMode);
 }
 
-export function getApiGameMode(): GameMode {
-  return activeGameMode;
-}
-
 export function setApiGameMode(gameMode: GameMode): void {
   activeGameMode = normalizeGameMode(gameMode);
 }
@@ -1247,7 +1243,7 @@ async function graphqlFetch<T>(
     if (!response.ok) {
       throw new Error(`GraphQL error: ${response.status}`);
     }
-    const json = await response.json() as { data?: T; errors?: Array<{ message: string }> };
+    const json = await response.json() as { data?: T; errors?: { message: string }[] };
     if (json.errors?.length) {
       if (allowPartialData && json.data) {
         console.log('[TarkovAPI] GraphQL partial data with errors:', json.errors[0]?.message || 'Unknown GraphQL error');
@@ -1273,9 +1269,9 @@ async function graphqlFetch<T>(
   }
 }
 
-export async function fetchPlayerLevels(): Promise<Array<{ level: number; exp: number; levelBadgeImageLink?: string }>> {
+export async function fetchPlayerLevels(): Promise<{ level: number; exp: number; levelBadgeImageLink?: string }[]> {
   const query = `query PlayerLevels { playerLevels { level exp levelBadgeImageLink } }`;
-  const data = await graphqlFetch<{ playerLevels: Array<{ level: number; exp: number; levelBadgeImageLink?: string }> }>(query);
+  const data = await graphqlFetch<{ playerLevels: { level: number; exp: number; levelBadgeImageLink?: string }[] }>(query);
   return data.playerLevels ?? [];
 }
 
@@ -2019,14 +2015,14 @@ export async function fetchItemNamesByTpls(tpls: string[], language: Language = 
       GRAPHQL_CHUNK_FETCH_CONCURRENCY,
       async (chunk) => {
         try {
-          const data = await graphqlFetch<{ items: Array<{ id: string; name: string; shortName?: string }> }>(query, {
+          const data = await graphqlFetch<{ items: { id: string; name: string; shortName?: string }[] }>(query, {
             ids: chunk,
             lang: language,
           });
           return data.items ?? [];
         } catch (error) {
           console.log('[TarkovAPI] GraphQL item name fetch failed:', error);
-          return [] as Array<{ id: string; name: string; shortName?: string }>;
+          return [] as { id: string; name: string; shortName?: string }[];
         }
       },
     );
@@ -2110,7 +2106,7 @@ export async function fetchItemMetaByTpls(
       async (chunk) => {
         try {
           const data = await graphqlFetch<{
-            items: Array<{
+            items: {
               id: string;
               name: string;
               shortName?: string;
@@ -2118,7 +2114,7 @@ export async function fetchItemMetaByTpls(
               height?: number;
               baseImageLink?: string;
               gridImageLink?: string;
-            }>;
+            }[];
           }>(query, {
             ids: chunk,
             lang: language,
@@ -2126,7 +2122,7 @@ export async function fetchItemMetaByTpls(
           return data.items ?? [];
         } catch (error) {
           console.log('[TarkovAPI] GraphQL item meta fetch failed:', error);
-          return [] as Array<{
+          return [] as {
             id: string;
             name: string;
             shortName?: string;
@@ -2134,7 +2130,7 @@ export async function fetchItemMetaByTpls(
             height?: number;
             baseImageLink?: string;
             gridImageLink?: string;
-          }>;
+          }[];
         }
       },
     );
@@ -2193,13 +2189,6 @@ export async function fetchItemMetaByTpls(
   }
 
   return cached;
-}
-
-export async function fetchItemNamesByIds(ids: string[], language: Language): Promise<Record<string, string>> {
-  // Deprecated: keep for compatibility; prefer fetchItemNamesByTpls.
-  void ids;
-  void language;
-  return {};
 }
 
 export async function fetchTaskSummaries(
@@ -3031,13 +3020,13 @@ interface RawBossListRow {
   normalizedName?: string;
   imagePortraitLink?: string | null;
   imagePosterLink?: string | null;
-  health?: Array<{ id: string; bodyPart: string; max: number }> | null;
-  equipment?: Array<{
+  health?: { id: string; bodyPart: string; max: number }[] | null;
+  equipment?: {
     count?: number | null;
     quantity?: number | null;
     item?: { id?: string | null } | null;
-  }> | null;
-  items?: Array<{ id?: string | null }> | null;
+  }[] | null;
+  items?: { id?: string | null }[] | null;
 }
 
 interface RawBossDetailRow {
@@ -3046,11 +3035,11 @@ interface RawBossDetailRow {
   normalizedName?: string;
   imagePortraitLink?: string | null;
   imagePosterLink?: string | null;
-  health?: Array<{ id: string; bodyPart: string; max: number }> | null;
-  equipment?: Array<{
+  health?: { id: string; bodyPart: string; max: number }[] | null;
+  equipment?: {
     count?: number | null;
     quantity?: number | null;
-    attributes?: Array<{ name?: string | null; value?: string | null }> | null;
+    attributes?: { name?: string | null; value?: string | null }[] | null;
     item?: {
       id?: string | null;
       name?: string | null;
@@ -3060,8 +3049,8 @@ interface RawBossDetailRow {
       types?: string[] | null;
       category?: { name: string } | null;
     } | null;
-  }> | null;
-  items?: Array<{ id?: string | null }> | null;
+  }[] | null;
+  items?: { id?: string | null }[] | null;
 }
 
 interface BossMapSpawnContext {
@@ -3192,7 +3181,7 @@ function toBossContainedItems(
             if (!name || !value) return null;
             return { name, value };
           })
-          .filter(Boolean) as Array<{ name: string; value: string }>
+          .filter(Boolean) as { name: string; value: string }[]
         : [];
 
       return {
@@ -3619,11 +3608,11 @@ async function fetchBossMapSpawnContext(
   }`;
 
   const loadMapData = async (requestLanguage: Language) => graphqlFetchWithLanguageFallback<{
-    maps?: Array<{
+    maps?: {
       id?: string | null;
       name?: string | null;
       normalizedName?: string | null;
-      bosses?: Array<{
+      bosses?: {
         name?: string | null;
         normalizedName?: string | null;
         boss?: {
@@ -3634,12 +3623,12 @@ async function fetchBossMapSpawnContext(
           imagePosterLink?: string | null;
         } | null;
         spawnChance?: number | null;
-        spawnLocations?: Array<{
+        spawnLocations?: {
           spawnKey?: string | null;
           name?: string | null;
           chance?: number | null;
-        } | null> | null;
-        escorts?: Array<{
+        }[] | null;
+        escorts?: {
           name?: string | null;
           normalizedName?: string | null;
           boss?: {
@@ -3649,17 +3638,17 @@ async function fetchBossMapSpawnContext(
             imagePortraitLink?: string | null;
             imagePosterLink?: string | null;
           } | null;
-          amount?: Array<{
+          amount?: {
             count?: number | null;
             chance?: number | null;
-          } | null> | null;
-        } | null> | null;
+          }[] | null;
+        }[] | null;
         spawnTime?: number | null;
         spawnTimeRandom?: boolean | null;
         spawnTrigger?: string | null;
         switch?: { id?: string | null } | null;
-      } | null> | null;
-    } | null>;
+      }[] | null;
+    }[] | null;
   }>(
     query,
     { lang: requestLanguage, gameMode },
@@ -3753,7 +3742,7 @@ async function fetchBossMapSpawnContext(
             chance: Number.isFinite(chance) ? chance : 0,
           };
         })
-        .filter(Boolean) as Array<{ spawnKey: string; name: string; chance: number }>;
+        .filter(Boolean) as { spawnKey: string; name: string; chance: number }[];
       const spawnChance = Number(spawn.spawnChance ?? NaN);
       const spawnTime = Number(spawn.spawnTime ?? NaN);
 
@@ -4356,15 +4345,15 @@ export async function fetchBossById(
     ?? null;
 }
 
-export async function fetchSkills(language: Language = 'en'): Promise<Array<{ id: string; name: string }>> {
+export async function fetchSkills(language: Language = 'en'): Promise<{ id: string; name: string }[]> {
   const query = `query Skills($lang: LanguageCode) { skills(lang: $lang) { id name } }`;
-  const data = await graphqlFetch<{ skills: Array<{ id: string; name: string }> }>(query, { lang: language });
+  const data = await graphqlFetch<{ skills: { id: string; name: string }[] }>(query, { lang: language });
   return data.skills ?? [];
 }
 
 export async function fetchAchievements(
   language: Language = 'en',
-): Promise<Array<{ id: string; name: string; rarity?: string; normalizedRarity?: string }>> {
+): Promise<{ id: string; name: string; rarity?: string; normalizedRarity?: string }[]> {
   const query = `query Achievements($lang: LanguageCode) {
     achievements(lang: $lang) {
       id
@@ -4374,13 +4363,13 @@ export async function fetchAchievements(
     }
   }`;
   const data = await graphqlFetch<{
-    achievements: Array<{ id: string; name: string; rarity?: string; normalizedRarity?: string }>;
+    achievements: { id: string; name: string; rarity?: string; normalizedRarity?: string }[];
   }>(query, { lang: language });
   return data.achievements ?? [];
 }
 
-export async function fetchHideoutStations(): Promise<Array<{ id: string; name: string }>> {
+export async function fetchHideoutStations(): Promise<{ id: string; name: string }[]> {
   const query = `query HideoutStations { hideoutStations { id name } }`;
-  const data = await graphqlFetch<{ hideoutStations: Array<{ id: string; name: string }> }>(query);
+  const data = await graphqlFetch<{ hideoutStations: { id: string; name: string }[] }>(query);
   return data.hideoutStations ?? [];
 }

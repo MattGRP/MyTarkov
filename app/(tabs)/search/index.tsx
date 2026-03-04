@@ -420,9 +420,8 @@ export default function SearchScreen() {
         return selectedTaskFactionSet.has(getFactionKey(task.factionName));
       })
       .filter((task) => {
-        if (only3x4Required && !task.kappaRequired) return false;
-        if (onlyLightkeeperRequired && !task.lightkeeperRequired) return false;
-        return true;
+        return (!only3x4Required || !!task.kappaRequired)
+          && (!onlyLightkeeperRequired || !!task.lightkeeperRequired);
       })
       .filter((task) => {
         if (!query) return true;
@@ -1356,7 +1355,7 @@ export default function SearchScreen() {
         </View>
       ))}
     </View>
-  ), [themeStyles.playerAvatar]);
+  ), []);
 
   const renderPlayerSkeletonRows = useCallback((count = 6) => (
     <View style={styles.skeletonListWrap}>
@@ -1375,7 +1374,7 @@ export default function SearchScreen() {
         </View>
       ))}
     </View>
-  ), []);
+  ), [themeStyles.playerAvatar]);
 
   const renderTraderSkeletonRows = useCallback((count = 6) => (
     <View style={styles.skeletonListWrap}>

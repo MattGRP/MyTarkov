@@ -1,3 +1,4 @@
+// noinspection JSUnusedGlobalSymbols
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Tabs } from 'expo-router';
 import { Search, Settings, User } from 'lucide-react-native';

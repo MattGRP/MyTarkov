@@ -18,10 +18,7 @@ const MIN_REFRESH_GAP_MS = 2 * 60 * 1000;
 type RefreshReason = 'startup' | 'resume' | 'retry' | 'missing-check';
 
 export default function PlayerSearchTokenBootstrap() {
-  if (Platform.OS !== 'ios') {
-    return null;
-  }
-
+  const isIos = Platform.OS === 'ios';
   const { gameMode } = useGameMode();
   const [visible, setVisible] = useState(false);
 
@@ -39,6 +36,7 @@ export default function PlayerSearchTokenBootstrap() {
   }, []);
 
   const scheduleRetry = useCallback(() => {
+    if (!isIos) return;
     clearRetryTimer();
     const attempt = retryAttemptRef.current + 1;
     retryAttemptRef.current = attempt;
@@ -56,10 +54,10 @@ export default function PlayerSearchTokenBootstrap() {
       isRefreshingRef.current = true;
       lastRefreshStartAtRef.current = Date.now();
     }, delay);
-  }, [clearRetryTimer]);
+  }, [clearRetryTimer, isIos]);
 
   const startRefresh = useCallback((reason: RefreshReason, force = false) => {
-    if (Platform.OS !== 'ios') return;
+    if (!isIos) return;
     if (gameMode !== 'pve') return;
     if (appStateRef.current !== 'active') return;
     if (isRefreshingRef.current) return;
@@ -70,7 +68,7 @@ export default function PlayerSearchTokenBootstrap() {
     setVisible(true);
     isRefreshingRef.current = true;
     lastRefreshStartAtRef.current = now;
-  }, [clearRetryTimer, gameMode]);
+  }, [clearRetryTimer, gameMode, isIos]);
 
   const finishRefresh = useCallback(() => {
     logInfo('TokenBootstrap', 'Token refresh finished');
@@ -99,6 +97,7 @@ export default function PlayerSearchTokenBootstrap() {
   }, [finishRefresh, scheduleRetry]);
 
   const startRefreshIfMissingToken = useCallback(async (reason: RefreshReason, force = false) => {
+    if (!isIos) return;
     if (gameMode !== 'pve') return;
     const token = await getPlayerSearchToken();
     if (token) {
@@ -109,10 +108,10 @@ export default function PlayerSearchTokenBootstrap() {
       return;
     }
     startRefresh(reason, force);
-  }, [gameMode, startRefresh]);
+  }, [gameMode, isIos, startRefresh]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
+    if (!isIos) return;
     if (gameMode !== 'pve') {
       clearRetryTimer();
       retryAttemptRef.current = 0;
@@ -135,7 +134,7 @@ export default function PlayerSearchTokenBootstrap() {
       }
 
       if (!token) {
-        startRefreshIfMissingToken('startup', true);
+        await startRefreshIfMissingToken('startup', true);
       } else {
         retryAttemptRef.current = 0;
         logInfo('TokenBootstrap', 'Token already available on startup', {
@@ -164,7 +163,11 @@ export default function PlayerSearchTokenBootstrap() {
       clearInterval(interval);
       appStateSub.remove();
     };
-  }, [clearRetryTimer, gameMode, startRefreshIfMissingToken]);
+  }, [clearRetryTimer, gameMode, isIos, startRefreshIfMissingToken]);
+
+  if (!isIos) {
+    return null;
+  }
 
   if (gameMode !== 'pve') {
     return null;

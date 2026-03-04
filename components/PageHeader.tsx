@@ -22,8 +22,7 @@ export function getPageHeaderEstimatedHeight(topInset: number, hasSubtitle: bool
   const subtitleHeight = hasSubtitle ? 20 : 0;
   const subtitleGap = hasSubtitle ? 6 : 0;
   const titleHeight = 38;
-  const bottomPadding = HEADER_BOTTOM;
-  return topPadding + subtitleHeight + subtitleGap + titleHeight + bottomPadding;
+  return topPadding + subtitleHeight + subtitleGap + titleHeight + HEADER_BOTTOM;
 }
 
 export default function PageHeader({

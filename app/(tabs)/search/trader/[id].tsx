@@ -243,7 +243,7 @@ export default function TraderDetailScreen() {
   const levelBarterRows = useMemo(() => {
     const levelValue = selectedLevel?.level ?? 0;
     const levelBarters = (trader?.barters ?? []).filter((offer) => (offer.level ?? 0) === levelValue);
-    const rows: Array<{ key: string; offer: TraderBarterOffer; reward: TraderContainedItem }> = [];
+    const rows: { key: string; offer: TraderBarterOffer; reward: TraderContainedItem }[] = [];
     levelBarters.forEach((offer, offerIndex) => {
       (offer.rewardItems ?? []).forEach((reward, rewardIndex) => {
         const rewardId = reward.item?.id || `reward-${rewardIndex}`;

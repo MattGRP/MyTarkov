@@ -79,6 +79,8 @@ export default React.memo(function SkillsSection({ skills, showHeader = true }: 
   );
 });
 
+const DIVIDER_HEIGHT = StyleSheet.hairlineWidth;
+
 const styles = StyleSheet.create({
   container: {
     gap: 14,
@@ -143,7 +145,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
+    height: DIVIDER_HEIGHT,
     backgroundColor: Colors.border,
     marginLeft: 36,
   },

@@ -1,3 +1,4 @@
+// noinspection JSUnusedGlobalSymbols
 import Colors from '@/constants/colors';
 
 export function formatNumber(n: number): string {

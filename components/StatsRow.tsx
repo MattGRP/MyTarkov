@@ -20,6 +20,8 @@ export default React.memo(function StatsRow({ label, value, isLast }: StatsRowPr
   );
 });
 
+const DIVIDER_HEIGHT = StyleSheet.hairlineWidth;
+
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
@@ -41,7 +43,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
+    height: DIVIDER_HEIGHT,
     backgroundColor: Colors.border,
   },
 });

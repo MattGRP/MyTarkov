@@ -184,13 +184,11 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
     if (webBindPromptingRef.current) return;
     webBindPromptingRef.current = true;
 
-    let detectedName = '';
+    let detectedName: string | null = null;
     try {
       const profile = await fetchPlayerProfile(accountId, { gameMode });
       detectedName = profile.info.nickname;
-    } catch {
-      detectedName = '';
-    }
+    } catch {}
 
     const message = detectedName
       ? l(

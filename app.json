@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "rork-app",
-    "slug": "7h6fk58er3zhn93sir4sv",
+    "name": "MyTarkov",
+    "slug": "my-tarkov",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "my-tarkov",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

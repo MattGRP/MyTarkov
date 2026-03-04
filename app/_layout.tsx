@@ -1,3 +1,4 @@
+// noinspection JSUnusedGlobalSymbols
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -11,7 +12,7 @@ import PlayerSearchTokenBootstrap from '@/components/PlayerSearchTokenBootstrap'
 import TasksBootstrap from '@/components/TasksBootstrap';
 import FullscreenSkeleton from '@/components/FullscreenSkeleton';
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -66,7 +67,7 @@ function ThemedRootShell({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   useEffect(() => {
-    SplashScreen.hideAsync();
+    void SplashScreen.hideAsync();
   }, []);
 
   return (

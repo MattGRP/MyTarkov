@@ -248,7 +248,7 @@ export default function ItemTypesScreen() {
     const virtualRoot = Array.from(normalizedByName.entries()).find(([, normalized]) => normalized === 'item')?.[0]
       || (roots.size === 1 ? Array.from(roots)[0] : undefined);
 
-    let topLevelCategories: string[] = [];
+    let topLevelCategories: string[];
     if (virtualRoot) {
       topLevelCategories = childrenMap.get(virtualRoot) ?? [];
       if (topLevelCategories.length === 0) {
@@ -322,8 +322,7 @@ export default function ItemTypesScreen() {
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length === 0) return undefined;
-      const fetchedCount = allPages.reduce((count, page) => count + page.length, 0);
-      return fetchedCount;
+      return allPages.reduce((count, page) => count + page.length, 0);
     },
     enabled: isFocused && !!validCurrentCategory,
     staleTime: 60 * 1000,

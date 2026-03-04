@@ -526,7 +526,7 @@ export default function BossDetailScreen() {
 
   const renderEquipmentGroups = useCallback((
     setId: string,
-    groups: Array<{ key: string; label: string; items: BossContainedItem[] }>,
+    groups: { key: string; label: string; items: BossContainedItem[] }[],
   ) => (
     <View style={styles.equipmentGroupList}>
       {groups.map((group) => (

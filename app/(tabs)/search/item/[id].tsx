@@ -256,7 +256,7 @@ export default function ItemDetailScreen() {
 
   const attributeRows = useMemo(() => {
     if (!data) return [];
-    const rows: Array<{ key: string; label: string; value: string }> = [];
+    const rows: { key: string; label: string; value: string }[] = [];
     const added = new Set<string>();
     const itemPropertyLabels = t.itemPropertyLabels ?? {};
 
@@ -269,7 +269,7 @@ export default function ItemDetailScreen() {
     const renderBool = (value?: boolean | null): string => (
       value === undefined || value === null ? '-' : (value ? t.yes : t.no)
     );
-    const renderList = (value?: Array<string | null> | null): string => {
+    const renderList = (value?: (string | null)[] | null): string => {
       const values = (value ?? [])
         .map((entry) => String(entry || '').trim())
         .filter(Boolean)
@@ -285,7 +285,7 @@ export default function ItemDetailScreen() {
     const pushBool = (key: string, value?: boolean | null, fallback?: string): void => {
       push(key, labelFor(key, fallback || key), renderBool(value));
     };
-    const pushList = (key: string, value?: Array<string | null> | null, fallback?: string): void => {
+    const pushList = (key: string, value?: (string | null)[] | null, fallback?: string): void => {
       push(key, labelFor(key, fallback || key), renderList(value));
     };
     const pushText = (key: string, value?: string | null, fallback?: string): void => {
