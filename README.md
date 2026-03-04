@@ -126,5 +126,5 @@ adb reverse tcp:8081 tcp:8081
 - 仓库浏览请避免 `Get-Content`（当前环境会导致卡顿），优先使用 `rg` 或 `cmd /c type`。
 
 ## 关键文档
-- 会话交接与决策记录：[`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md)
+- 会话交接与决策记录：[`SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md)
 - 工程开发准则（加载动画与 API 分块策略）：[`docs/ENGINEERING_GUIDELINES.md`](./docs/ENGINEERING_GUIDELINES.md)

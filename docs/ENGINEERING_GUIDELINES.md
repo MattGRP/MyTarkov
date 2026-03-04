@@ -65,3 +65,51 @@ This document is the baseline standard for all new pages and API integrations.
 - Pagination/chunk logic verified for large lists.
 - `bunx tsc --noEmit` passes.
 
+## 8) API Contract Iron Rule (Must Follow)
+
+- Never guess upstream API request/response structures.
+- Before coding any new field mapping:
+  - validate with a real request to `https://api.tarkov.dev/graphql`
+  - cross-check field usage in `https://github.com/the-hideout/tarkov-dev`
+- If runtime errors occur:
+  - reproduce with a real query first
+  - capture exact payload shape
+  - patch code only after shape is confirmed
+
+## 9) i18n Architecture Rule
+
+- All user-facing text must come from i18n; no page-level hardcoded copy.
+- Keep a single i18n import entry: `constants/i18n.ts`.
+- Maintain modular i18n files:
+  - `constants/i18n/types.ts`
+  - `constants/i18n/translations.ts`
+  - `constants/i18n/localizers.ts`
+- Any new key must be added in `zh/en/ru` in the same PR.
+
+## 10) Theme Token Rule
+
+- All color usage must come from `constants/colors.ts`.
+- Do not hardcode `#hex` / `rgba(...)` in pages/components.
+- PvP/PvE visual differences must be implemented through mode theme tokens, not ad-hoc component styles.
+
+## 11) Request Priority Rule
+
+- Foreground screen requests must have priority over warmup/background requests.
+- Warmups must never block current page rendering or interaction.
+- In-flight requests must be canceled on:
+  - screen leave
+  - search condition changes
+  - context changes (language/game mode) when result is no longer valid
+
+## 12) Evidence + Handoff Requirement
+
+- Every API-shape change must include evidence in commit/PR notes:
+  - the exact GraphQL query used for verification
+  - one sample success payload shape
+  - one sample failure/partial payload shape (if observed)
+- If a bug report references exported diagnostics (for example XML reports), the handoff must include the exact file path and timestamp.
+- Handoff docs must include:
+  - unresolved issues
+  - reproduction steps
+  - current workaround (if any)
+  - next recommended verification command(s)
