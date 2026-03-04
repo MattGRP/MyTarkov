@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   TouchableOpacity,
   Linking,
 } from 'react-native';
@@ -13,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ExternalLink, Star } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { localizeObjectiveType, localizeTaskRequirementStatus, localizeTraderName } from '@/constants/i18n';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchTaskById } from '@/services/tarkovApi';
 import type {
@@ -24,6 +24,8 @@ import type {
   TaskStatusRequirement,
   TaskTraderRequirement,
 } from '@/types/tarkov';
+import ShimmerBlock from '@/components/ShimmerBlock';
+import FullscreenSkeleton from '@/components/FullscreenSkeleton';
 
 function sectionHasRewards(rewards?: TaskRewardsLite | null): boolean {
   if (!rewards) return false;
@@ -54,55 +56,6 @@ function normalizeCompareMethod(compareMethod: string | null | undefined, lessOr
   return normalized;
 }
 
-const TRADER_NAME_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  fence: { zh: '黑商', ru: 'Fence' },
-  prapor: { zh: '俄商', ru: 'Prapor' },
-  therapist: { zh: '大妈', ru: 'Therapist' },
-  skier: { zh: '小蓝帽', ru: 'Skier' },
-  peacekeeper: { zh: '美商', ru: 'Peacekeeper' },
-  mechanic: { zh: '机械师', ru: 'Mechanic' },
-  ragman: { zh: '服装商', ru: 'Ragman' },
-  jaeger: { zh: '杰哥', ru: 'Jaeger' },
-  lightkeeper: { zh: '灯塔商人', ru: 'Lightkeeper' },
-  ref: { zh: 'Ref', ru: 'Ref' },
-};
-
-function localizeTraderName(name: string, normalizedName: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const normalized = (normalizedName || name).trim().toLowerCase();
-  const mapped = TRADER_NAME_TRANSLATIONS[normalized];
-  return mapped?.[language] || name;
-}
-
-const OBJECTIVE_TYPE_TRANSLATIONS: Record<string, { en: string; zh: string; ru: string }> = {
-  buildweapon: { en: 'Build weapon', zh: '组装武器', ru: 'Собрать оружие' },
-  experience: { en: 'Gain experience', zh: '获取经验', ru: 'Получить опыт' },
-  extract: { en: 'Extract', zh: '成功撤离', ru: 'Эвакуироваться' },
-  finditem: { en: 'Find item', zh: '寻找物品', ru: 'Найти предмет' },
-  findquestitem: { en: 'Find quest item', zh: '寻找任务物品', ru: 'Найти квестовый предмет' },
-  giveitem: { en: 'Hand over item', zh: '上交物品', ru: 'Передать предмет' },
-  givequestitem: { en: 'Hand over quest item', zh: '上交任务物品', ru: 'Передать квестовый предмет' },
-  mark: { en: 'Mark target', zh: '标记目标', ru: 'Пометить цель' },
-  plantitem: { en: 'Plant item', zh: '放置物品', ru: 'Установить предмет' },
-  plantquestitem: { en: 'Plant quest item', zh: '放置任务物品', ru: 'Установить квестовый предмет' },
-  sellitem: { en: 'Sell item', zh: '出售物品', ru: 'Продать предмет' },
-  shoot: { en: 'Eliminate target', zh: '击杀目标', ru: 'Устранить цель' },
-  skill: { en: 'Skill requirement', zh: '技能达标', ru: 'Требование навыка' },
-  taskstatus: { en: 'Task status', zh: '任务状态', ru: 'Статус задания' },
-  traderlevel: { en: 'Trader level', zh: '商人等级', ru: 'Уровень торговца' },
-  traderstanding: { en: 'Trader standing', zh: '商人好感', ru: 'Репутация торговца' },
-  useitem: { en: 'Use item', zh: '使用物品', ru: 'Использовать предмет' },
-  visit: { en: 'Visit location', zh: '前往地点', ru: 'Посетить место' },
-};
-
-function localizeObjectiveType(type: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
-  const rawType = (type ?? '').trim();
-  if (!rawType) return '';
-  const normalized = rawType.replace(/[^a-z]/gi, '').toLowerCase();
-  const mapped = OBJECTIVE_TYPE_TRANSLATIONS[normalized];
-  return mapped?.[language] ?? rawType;
-}
-
 const WEAPON_PART_HINTS = [
   'receiver',
   'upper receiver',
@@ -127,30 +80,6 @@ const WEAPON_PART_HINTS = [
   'buffer tube',
   'dust cover',
   'foregrip',
-  '枪机',
-  '机匣',
-  '上机匣',
-  '下机匣',
-  '枪管',
-  '枪托',
-  '拉机柄',
-  '护木',
-  '握把',
-  '弹匣',
-  '消音',
-  '制退',
-  '导轨',
-  '瞄具',
-  'прицел',
-  'ствол',
-  'цевь',
-  'рукоят',
-  'приклад',
-  'магазин',
-  'глуш',
-  'затвор',
-  'дтк',
-  'ресивер',
 ];
 
 function isLikelyWeaponPart(item: TaskObjectiveItemRef): boolean {
@@ -373,14 +302,19 @@ function RequirementTaskRow({
   item,
   onOpenTask,
   statusLabel,
+  language,
   isLast,
 }: {
   item: TaskStatusRequirement;
   onOpenTask: (taskId: string) => void;
   statusLabel: string;
+  language: 'en' | 'zh' | 'ru';
   isLast: boolean;
 }) {
-  const status = item.status?.join(', ') || '-';
+  const status = (item.status ?? [])
+    .map((entry) => localizeTaskRequirementStatus(entry, language))
+    .filter(Boolean)
+    .join(', ') || '-';
   return (
     <View style={styles.infoRowWrap}>
       <TouchableOpacity style={styles.requirementTaskRow} onPress={() => onOpenTask(item.task.id)} activeOpacity={0.75}>
@@ -530,8 +464,48 @@ function RewardTraderStandingRow({
 }
 
 export default function TaskDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string | string[] }>();
+  const {
+    id,
+    name,
+    normalizedName,
+    mapName,
+    taskImageLink,
+    traderId,
+    traderName: traderNameParam,
+    traderNormalizedName,
+    traderImageLink,
+    minPlayerLevel,
+    experience,
+    kappaRequired,
+    lightkeeperRequired,
+  } = useLocalSearchParams<{
+    id: string | string[];
+    name?: string | string[];
+    normalizedName?: string | string[];
+    mapName?: string | string[];
+    taskImageLink?: string | string[];
+    traderId?: string | string[];
+    traderName?: string | string[];
+    traderNormalizedName?: string | string[];
+    traderImageLink?: string | string[];
+    minPlayerLevel?: string | string[];
+    experience?: string | string[];
+    kappaRequired?: string | string[];
+    lightkeeperRequired?: string | string[];
+  }>();
   const taskId = Array.isArray(id) ? id[0] : id;
+  const getParam = useCallback((value?: string | string[]) => {
+    if (Array.isArray(value)) return String(value[0] || '').trim();
+    return String(value || '').trim();
+  }, []);
+  const parseIntParam = useCallback((value?: string | string[]) => {
+    const parsed = Number(getParam(value));
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+  }, [getParam]);
+  const parseBoolParam = useCallback((value?: string | string[]) => {
+    const raw = getParam(value).toLowerCase();
+    return raw === '1' || raw === 'true';
+  }, [getParam]);
   const { t, language } = useLanguage();
   const router = useRouter();
   const segments = useSegments();
@@ -542,7 +516,7 @@ export default function TaskDetailScreen() {
 
   const taskQuery = useQuery({
     queryKey: ['task-detail', taskId, language],
-    queryFn: () => fetchTaskById(taskId!, language),
+    queryFn: ({ signal }) => fetchTaskById(taskId!, language, { signal }),
     enabled: !!taskId,
     staleTime: 30 * 60 * 1000,
     retry: 2,
@@ -550,7 +524,61 @@ export default function TaskDetailScreen() {
     refetchOnReconnect: 'always',
   });
 
-  const task = taskQuery.data;
+  const previewTask = useMemo<TaskDetail | null>(() => {
+    const previewId = String(taskId || '').trim();
+    if (!previewId) return null;
+    const previewName = getParam(name) || previewId;
+    const previewTraderName = getParam(traderNameParam) || t.searchUnknown;
+    const previewMapName = getParam(mapName);
+    return {
+      id: previewId,
+      name: previewName,
+      normalizedName: getParam(normalizedName) || previewName.toLowerCase(),
+      trader: {
+        id: getParam(traderId) || undefined,
+        name: previewTraderName,
+        normalizedName: getParam(traderNormalizedName) || undefined,
+        imageLink: getParam(traderImageLink) || undefined,
+      },
+      map: previewMapName ? { name: previewMapName } : null,
+      experience: parseIntParam(experience),
+      wikiLink: null,
+      taskImageLink: getParam(taskImageLink) || undefined,
+      minPlayerLevel: parseIntParam(minPlayerLevel),
+      taskRequirements: [],
+      traderRequirements: [],
+      restartable: null,
+      objectives: [],
+      failConditions: [],
+      startRewards: null,
+      finishRewards: null,
+      failureOutcome: null,
+      factionName: null,
+      kappaRequired: parseBoolParam(kappaRequired),
+      lightkeeperRequired: parseBoolParam(lightkeeperRequired),
+    };
+  }, [
+    experience,
+    getParam,
+    kappaRequired,
+    lightkeeperRequired,
+    mapName,
+    minPlayerLevel,
+    name,
+    normalizedName,
+    parseBoolParam,
+    parseIntParam,
+    t.searchUnknown,
+    taskId,
+    taskImageLink,
+    traderId,
+    traderImageLink,
+    traderNameParam,
+    traderNormalizedName,
+  ]);
+
+  const task = taskQuery.data ?? previewTask;
+  const isHydratingDetails = !taskQuery.data && taskQuery.isFetching && !!previewTask;
   const title = task?.name || t.taskDetailsTitle;
 
   const openWiki = useCallback(async (taskData: TaskDetail) => {
@@ -612,23 +640,17 @@ export default function TaskDetailScreen() {
 
   if (taskQuery.isLoading && !task) {
     return (
-      <View style={styles.centerWrap}>
+      <>
         <Stack.Screen options={{ title: t.taskDetailsTitle }} />
-        <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.centerText}>{t.tasksLoading}</Text>
-      </View>
+        <FullscreenSkeleton message={t.tasksLoading} />
+      </>
     );
   }
 
   if (taskQuery.isError || !task) {
     const rawError = taskQuery.isError ? (taskQuery.error as Error)?.message || '' : '';
-    const timeoutMessage = language === 'zh'
-      ? '请求超时，请重试。'
-      : language === 'ru'
-        ? 'Время запроса истекло. Повторите попытку.'
-        : 'Request timed out. Please retry.';
     const errorMessage = /abort|timeout/i.test(rawError)
-      ? timeoutMessage
+      ? t.searchRequestTimeout
       : rawError || t.tasksNoResults;
     return (
       <View style={styles.centerWrap}>
@@ -678,6 +700,42 @@ export default function TaskDetailScreen() {
           </View>
         </View>
 
+        {isHydratingDetails ? (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.taskSectionObjectives}</Text>
+              <View style={[styles.sectionCard, styles.skeletonList]}>
+                <ShimmerBlock height={14} />
+                <ShimmerBlock height={14} width="94%" />
+                <ShimmerBlock height={56} borderRadius={10} />
+              </View>
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.taskSectionInfo}</Text>
+              <View style={[styles.sectionCard, styles.skeletonList]}>
+                <ShimmerBlock height={14} />
+                <ShimmerBlock height={14} width="88%" />
+                <ShimmerBlock height={14} width="78%" />
+              </View>
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.taskSectionRequirements}</Text>
+              <View style={[styles.sectionCard, styles.skeletonList]}>
+                <ShimmerBlock height={14} />
+                <ShimmerBlock height={46} borderRadius={10} />
+              </View>
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.taskSectionRewards}</Text>
+              <View style={[styles.sectionCard, styles.skeletonList]}>
+                <ShimmerBlock height={14} />
+                <ShimmerBlock height={46} borderRadius={10} />
+                <ShimmerBlock height={46} borderRadius={10} />
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.taskSectionObjectives}</Text>
           <View style={[styles.sectionCard, styles.objectiveSectionCard]}>
@@ -762,6 +820,7 @@ export default function TaskDetailScreen() {
                       item={item}
                       onOpenTask={openTask}
                       statusLabel={t.taskRequiredStatus}
+                      language={language}
                       isLast={idx === (task.taskRequirements?.length ?? 1) - 1}
                     />
                   ))}
@@ -875,6 +934,8 @@ export default function TaskDetailScreen() {
             ))
           )}
         </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -992,6 +1053,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 14,
     overflow: 'hidden',
+  },
+  skeletonList: {
+    gap: 8,
+    padding: 14,
   },
   objectiveSectionCard: {
     borderColor: Colors.goldDim,

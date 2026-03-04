@@ -1,26 +1,32 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Keyboard, Modal, Pressable, ScrollView, Platform, type LayoutChangeEvent } from 'react-native';
-import { Search, X, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Filter, Package, User, ClipboardList, Store } from 'lucide-react-native';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Keyboard, Modal, Pressable, ScrollView, Platform, type LayoutChangeEvent } from 'react-native';
+import { Search, X, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Filter, Package, User, ClipboardList, Store, Skull } from 'lucide-react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/colors';
+import { localizeBossName, localizeCategoryName, localizeTraderName } from '@/constants/i18n';
 import { useLanguage } from '@/providers/LanguageProvider';
 import {
-  fetchTasks,
+  fetchItemCategories,
+  fetchTaskSummaries,
   fetchTraders,
+  fetchBosses,
   fetchPlayerProfile,
   isTurnstileRequiredError,
   savePlayerSearchToken,
   searchItems,
   searchPlayers,
 } from '@/services/tarkovApi';
-import { ItemSearchResult, SearchResult, TaskDetail, TraderDetail } from '@/types/tarkov';
+import { BossDetail, ItemSearchResult, SearchResult, TaskDetail, TraderDetail } from '@/types/tarkov';
 import { formatCountdownToTimestamp, formatPrice } from '@/utils/helpers';
 import FullScreenImageModal from '@/components/FullScreenImageModal';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
 import TurnstileTokenModal from '@/components/TurnstileTokenModal';
+import ShimmerBlock from '@/components/ShimmerBlock';
 
 const SORT_OPTIONS = [
   { key: 'name', labelKey: 'searchSortName' },
@@ -32,7 +38,11 @@ type SortKey = typeof SORT_OPTIONS[number]['key'];
 
 type SortDirection = 'asc' | 'desc';
 
-type SearchMode = 'item' | 'player' | 'task' | 'trader';
+type SearchMode = 'item' | 'player' | 'task' | 'trader' | 'boss';
+const SEARCH_LIST_PAGE_SIZE = 40;
+const RECENT_PLAYERS_STORAGE_KEY = 'search_recent_players';
+const RECENT_PLAYERS_MAX = 10;
+const SEARCH_MODE_ORDER: SearchMode[] = ['task', 'boss', 'trader', 'item', 'player'];
 
 function getItemPrimaryPrice(item: ItemSearchResult): number {
   return item.avg24hPrice ?? item.lastLowPrice ?? item.basePrice ?? 0;
@@ -70,56 +80,6 @@ function getTaskMapLabel(task: TaskDetail, anyLabel: string): string {
   return name;
 }
 
-const CATEGORY_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  'arm band': { zh: '臂章', ru: 'Повязка' },
-  'armor plate': { zh: '插板', ru: 'Бронеплита' },
-  'auxiliary mod': { zh: '辅助配件', ru: 'Доп. модуль' },
-  'cylinder magazine': { zh: '弹鼓', ru: 'Барабанный магазин' },
-  'face cover': { zh: '面罩', ru: 'Маска' },
-  flyer: { zh: '传单', ru: 'Листовка' },
-  headwear: { zh: '头盔', ru: 'Головной убор' },
-  keycard: { zh: '钥匙卡', ru: 'Ключ-карта' },
-  'mechanical key': { zh: '机械钥匙', ru: 'Механический ключ' },
-  'night vision': { zh: '夜视设备', ru: 'Ночное видение' },
-  notes: { zh: '笔记', ru: 'Записки' },
-  other: { zh: '其他', ru: 'Прочее' },
-  'radio transmitter': { zh: '无线电发射器', ru: 'Радиопередатчик' },
-  'random loot container': { zh: '随机战利品容器', ru: 'Случайный контейнер' },
-  revolver: { zh: '左轮手枪', ru: 'Револьвер' },
-  rocket: { zh: '火箭弹', ru: 'Ракета' },
-  'rocket launcher': { zh: '火箭筒', ru: 'Ракетомет' },
-  'spring driven cylinder': { zh: '发条弹鼓', ru: 'Пружинный барабан' },
-  tapes: { zh: '磁带', ru: 'Кассеты' },
-};
-
-const TRADER_NAME_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  fence: { zh: '黑商', ru: 'Fence' },
-  prapor: { zh: '俄商', ru: 'Prapor' },
-  therapist: { zh: '大妈', ru: 'Therapist' },
-  skier: { zh: '小蓝帽', ru: 'Skier' },
-  peacekeeper: { zh: '美商', ru: 'Peacekeeper' },
-  mechanic: { zh: '机械师', ru: 'Mechanic' },
-  ragman: { zh: '服装商', ru: 'Ragman' },
-  jaeger: { zh: '杰哥', ru: 'Jaeger' },
-  lightkeeper: { zh: '灯塔商人', ru: 'Lightkeeper' },
-  'radio station': { zh: '电台', ru: 'Radio station' },
-  'mr. kerman': { zh: 'Kerman 先生', ru: 'Mr. Kerman' },
-};
-
-function localizeCategoryName(name: string, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const key = name.trim().toLowerCase();
-  const mapped = CATEGORY_TRANSLATIONS[key];
-  return mapped?.[language] || name;
-}
-
-function localizeTraderName(name: string, normalizedName: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const normalized = (normalizedName || name).trim().toLowerCase();
-  const mapped = TRADER_NAME_TRANSLATIONS[normalized];
-  return mapped?.[language] || name;
-}
-
 function localizeUnknownText(value: string | null | undefined, unknownLabel: string): string {
   const text = String(value || '').trim();
   if (!text) return unknownLabel;
@@ -128,16 +88,19 @@ function localizeUnknownText(value: string | null | undefined, unknownLabel: str
   return text;
 }
 
+function isAbortRequestError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const name = String(error.name || '').toLowerCase();
+  const message = String(error.message || '').toLowerCase();
+  return name.includes('abort') || message.includes('abort');
+}
+
 export default function SearchScreen() {
   const { t, language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const l = useCallback((zh: string, en: string, ru: string) => {
-    if (language === 'zh') return zh;
-    if (language === 'ru') return ru;
-    return en;
-  }, [language]);
   const isAndroid = Platform.OS === 'android';
+  const isFocused = useIsFocused();
   const [headerHeight, setHeaderHeight] = useState<number>(() => getPageHeaderEstimatedHeight(insets.top, true));
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
 
@@ -147,9 +110,12 @@ export default function SearchScreen() {
 
   const [itemResults, setItemResults] = useState<ItemSearchResult[]>([]);
   const [itemHasSearched, setItemHasSearched] = useState<boolean>(false);
+  const [itemVisibleCount, setItemVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
 
   const [playerResults, setPlayerResults] = useState<SearchResult[]>([]);
   const [playerHasSearched, setPlayerHasSearched] = useState<boolean>(false);
+  const [playerVisibleCount, setPlayerVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
+  const [recentPlayers, setRecentPlayers] = useState<SearchResult[]>([]);
 
   const [selectedTaskTraders, setSelectedTaskTraders] = useState<string[]>([]);
   const [draftTaskTraders, setDraftTaskTraders] = useState<string[]>([]);
@@ -165,6 +131,9 @@ export default function SearchScreen() {
   const [taskFactionModalOpen, setTaskFactionModalOpen] = useState(false);
   const [only3x4Required, setOnly3x4Required] = useState(false);
   const [onlyLightkeeperRequired, setOnlyLightkeeperRequired] = useState(false);
+  const [taskVisibleCount, setTaskVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
+  const [traderVisibleCount, setTraderVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
+  const [bossVisibleCount, setBossVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
 
   const [sortKey, setSortKey] = useState<SortKey>('avg24hPrice');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
@@ -178,41 +147,64 @@ export default function SearchScreen() {
   const [pendingPlayerQuery, setPendingPlayerQuery] = useState<string>('');
   const [isTokenResolving, setIsTokenResolving] = useState(false);
   const [hasRetriedWithFreshToken, setHasRetriedWithFreshToken] = useState(false);
+  const itemSearchAbortRef = useRef<AbortController | null>(null);
+  const playerSearchAbortRef = useRef<AbortController | null>(null);
 
   const itemSearchMutation = useMutation({
     mutationFn: async (query: string) => {
-      return await searchItems(query, language);
+      itemSearchAbortRef.current?.abort();
+      const controller = new AbortController();
+      itemSearchAbortRef.current = controller;
+      try {
+        return await searchItems(query, language, { signal: controller.signal });
+      } finally {
+        if (itemSearchAbortRef.current === controller) {
+          itemSearchAbortRef.current = null;
+        }
+      }
     },
     onSuccess: (data) => {
       setItemResults(data);
       setItemHasSearched(true);
     },
-    onError: () => {
+    onError: (error) => {
+      if (isAbortRequestError(error)) return;
       setItemHasSearched(true);
     },
   });
 
   const playerSearchMutation = useMutation({
     mutationFn: async (query: string) => {
+      playerSearchAbortRef.current?.abort();
+      const controller = new AbortController();
+      playerSearchAbortRef.current = controller;
       const trimmed = query.trim();
       const isAccountIdQuery = /^\d+$/.test(trimmed);
 
       if (isAndroid && !isAccountIdQuery) {
         throw new Error(
-          l(
-            '安卓仅支持输入 AccountID 搜索玩家。',
-            'Android supports AccountID-only player search.',
-            'На Android поиск игроков поддерживает только ID аккаунта.',
-          ),
+          t.searchAndroidAccountOnlyError,
         );
       }
 
       if (isAccountIdQuery) {
-        const profile = await fetchPlayerProfile(trimmed);
-        return [{ id: trimmed, name: profile.info.nickname }];
+        try {
+          const profile = await fetchPlayerProfile(trimmed, { signal: controller.signal });
+          return [{ id: trimmed, name: profile.info.nickname }];
+        } finally {
+          if (playerSearchAbortRef.current === controller) {
+            playerSearchAbortRef.current = null;
+          }
+        }
       }
 
-      return await searchPlayers(trimmed);
+      try {
+        return await searchPlayers(trimmed, { signal: controller.signal });
+      } finally {
+        if (playerSearchAbortRef.current === controller) {
+          playerSearchAbortRef.current = null;
+        }
+      }
     },
     onSuccess: (data) => {
       setPlayerResults(data);
@@ -220,6 +212,9 @@ export default function SearchScreen() {
       setHasRetriedWithFreshToken(false);
     },
     onError: (error, query) => {
+      if (isAbortRequestError(error)) {
+        return;
+      }
       if (!isAndroid && isTurnstileRequiredError(error)) {
         if (hasRetriedWithFreshToken) {
           setHasRetriedWithFreshToken(false);
@@ -227,7 +222,7 @@ export default function SearchScreen() {
           setTokenModalVisible(false);
           setPendingPlayerQuery('');
           setPlayerHasSearched(false);
-          setInputError(l('验证失败，请重试。', 'Verification failed. Please try again.', 'Проверка не удалась. Повторите попытку.'));
+          setInputError(t.searchVerifyFailed);
           return;
         }
         setIsTokenResolving(true);
@@ -244,7 +239,8 @@ export default function SearchScreen() {
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', language],
-    queryFn: () => fetchTasks(language),
+    queryFn: ({ signal }) => fetchTaskSummaries(language, { signal }),
+    enabled: isFocused && searchMode === 'task',
     staleTime: 30 * 60 * 1000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
@@ -254,13 +250,91 @@ export default function SearchScreen() {
 
   const tradersQuery = useQuery({
     queryKey: ['traders', language],
-    queryFn: () => fetchTraders(language),
+    queryFn: ({ signal }) => fetchTraders(language, { signal }),
+    enabled: isFocused && searchMode === 'trader',
     staleTime: 30 * 60 * 1000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     refetchOnReconnect: 'always',
   });
   const allTraders = useMemo(() => tradersQuery.data ?? [], [tradersQuery.data]);
+
+  const bossesQuery = useQuery({
+    queryKey: ['bosses', language],
+    queryFn: ({ signal }) => fetchBosses(language, { signal }),
+    enabled: isFocused && searchMode === 'boss',
+    staleTime: 30 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchOnReconnect: 'always',
+  });
+  const allBosses = useMemo(() => bossesQuery.data ?? [], [bossesQuery.data]);
+
+  const itemTypeCategoriesQuery = useQuery({
+    queryKey: ['item-categories', 'en'],
+    queryFn: ({ signal }) => fetchItemCategories('en', { signal }),
+    enabled: isFocused && searchMode === 'item',
+    staleTime: 30 * 60 * 1000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchOnReconnect: 'always',
+  });
+
+  const topLevelItemTypes = useMemo(() => {
+    const categories = itemTypeCategoriesQuery.data ?? [];
+    if (categories.length === 0) return [] as string[];
+
+    const roots = new Set<string>();
+    const childSetMap = new Map<string, Set<string>>();
+    const normalizedByName = new Map<string, string>();
+
+    const addChild = (parentName: string, childName: string) => {
+      const parent = parentName.trim();
+      const child = childName.trim();
+      if (!parent || !child || parent === child) return;
+      if (!childSetMap.has(parent)) {
+        childSetMap.set(parent, new Set<string>());
+      }
+      childSetMap.get(parent)?.add(child);
+    };
+
+    for (const category of categories) {
+      const name = String(category.name || '').trim();
+      if (!name) continue;
+
+      normalizedByName.set(name, String(category.normalizedName || '').trim().toLowerCase());
+      const parentName = String(category.parent?.name || '').trim();
+      if (!parentName) {
+        roots.add(name);
+      } else {
+        addChild(parentName, name);
+      }
+
+      for (const child of category.children ?? []) {
+        const childName = String(child.name || '').trim();
+        if (!childName) continue;
+        addChild(name, childName);
+      }
+    }
+
+    const virtualRoot = Array.from(normalizedByName.entries()).find(([, normalized]) => normalized === 'item')?.[0]
+      || (roots.size === 1 ? Array.from(roots)[0] : undefined);
+
+    let top = virtualRoot ? Array.from(childSetMap.get(virtualRoot) ?? []) : Array.from(roots);
+    top = top.filter((name) => {
+      const normalized = name.trim().toLowerCase();
+      if (!normalized) return false;
+      if (virtualRoot && name === virtualRoot) return false;
+      return normalized !== 'item';
+    });
+
+    const locale = language === 'zh' ? 'zh-Hans-CN' : language === 'ru' ? 'ru-RU' : 'en';
+    return Array.from(new Set(top)).sort((a, b) => (
+      localizeCategoryName(a, language).localeCompare(localizeCategoryName(b, language), locale)
+    ));
+  }, [itemTypeCategoriesQuery.data, language]);
 
   const taskTraderOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -389,6 +463,23 @@ export default function SearchScreen() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allTraders, searchText]);
 
+  const filteredBossResults = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    const list = [...allBosses];
+    const sortByName = (a: BossDetail, b: BossDetail) => String(a.name || '').localeCompare(String(b.name || ''));
+    if (!query) {
+      return list.sort(sortByName);
+    }
+    return list
+      .filter((boss) => {
+        const name = String(boss.name || '').toLowerCase();
+        const normalizedName = String(boss.normalizedName || '').toLowerCase();
+        const localizedName = localizeBossName(String(boss.name || ''), boss.normalizedName, language).toLowerCase();
+        return name.includes(query) || normalizedName.includes(query) || localizedName.includes(query);
+      })
+      .sort(sortByName);
+  }, [allBosses, language, searchText]);
+
   const {
     mutate: runItemSearch,
     reset: resetItemSearch,
@@ -413,23 +504,19 @@ export default function SearchScreen() {
   }, []);
 
   useEffect(() => {
-    if (searchMode !== 'item') return;
+    return () => {
+      itemSearchAbortRef.current?.abort();
+      playerSearchAbortRef.current?.abort();
+    };
+  }, []);
 
-    const query = searchText.trim();
-    if (!query) {
-      setItemResults([]);
-      setItemHasSearched(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setInputError('');
-      resetItemSearch();
-      runItemSearch(query);
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [language, searchMode, searchText, resetItemSearch, runItemSearch]);
+  useEffect(() => {
+    if (isFocused) return;
+    itemSearchAbortRef.current?.abort();
+    playerSearchAbortRef.current?.abort();
+    setTokenModalVisible(false);
+    setIsTokenResolving(false);
+  }, [isFocused]);
 
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
@@ -486,6 +573,101 @@ export default function SearchScreen() {
     return sorted;
   }, [effectiveCategories, itemResults, selectedCategorySet, sortDir, sortKey]);
 
+  const visibleItemResults = useMemo(
+    () => filteredItemResults.slice(0, itemVisibleCount),
+    [filteredItemResults, itemVisibleCount],
+  );
+  const visiblePlayerResults = useMemo(
+    () => playerResults.slice(0, playerVisibleCount),
+    [playerResults, playerVisibleCount],
+  );
+  const visibleTaskResults = useMemo(
+    () => filteredTaskResults.slice(0, taskVisibleCount),
+    [filteredTaskResults, taskVisibleCount],
+  );
+  const visibleTraderResults = useMemo(
+    () => filteredTraderResults.slice(0, traderVisibleCount),
+    [filteredTraderResults, traderVisibleCount],
+  );
+  const visibleBossResults = useMemo(
+    () => filteredBossResults.slice(0, bossVisibleCount),
+    [bossVisibleCount, filteredBossResults],
+  );
+
+  const handleLoadMoreItems = useCallback(() => {
+    if (isItemPending) return;
+    if (itemVisibleCount >= filteredItemResults.length) return;
+    setItemVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredItemResults.length));
+  }, [filteredItemResults.length, isItemPending, itemVisibleCount]);
+  const handleLoadMorePlayers = useCallback(() => {
+    if (isPlayerPending) return;
+    if (playerVisibleCount >= playerResults.length) return;
+    setPlayerVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, playerResults.length));
+  }, [isPlayerPending, playerResults.length, playerVisibleCount]);
+  const handleLoadMoreTasks = useCallback(() => {
+    if (tasksQuery.isLoading) return;
+    if (taskVisibleCount >= filteredTaskResults.length) return;
+    setTaskVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredTaskResults.length));
+  }, [filteredTaskResults.length, taskVisibleCount, tasksQuery.isLoading]);
+  const handleLoadMoreTraders = useCallback(() => {
+    if (tradersQuery.isLoading) return;
+    if (traderVisibleCount >= filteredTraderResults.length) return;
+    setTraderVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredTraderResults.length));
+  }, [filteredTraderResults.length, traderVisibleCount, tradersQuery.isLoading]);
+  const handleLoadMoreBosses = useCallback(() => {
+    if (bossesQuery.isLoading) return;
+    if (bossVisibleCount >= filteredBossResults.length) return;
+    setBossVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredBossResults.length));
+  }, [bossVisibleCount, bossesQuery.isLoading, filteredBossResults.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem(RECENT_PLAYERS_STORAGE_KEY)
+      .then((raw) => {
+        if (!isMounted || !raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return;
+          const normalized: SearchResult[] = parsed
+            .map((entry) => ({
+              id: String((entry as { id?: unknown })?.id || '').trim(),
+              name: String((entry as { name?: unknown })?.name || '').trim(),
+            }))
+            .filter((entry) => entry.id)
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name || entry.id,
+            }))
+            .slice(0, RECENT_PLAYERS_MAX);
+          setRecentPlayers(normalized);
+        } catch {
+          // ignore invalid cache
+        }
+      })
+      .catch(() => {
+        // ignore storage errors
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setItemVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [filteredItemResults]);
+  useEffect(() => {
+    setPlayerVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [playerResults]);
+  useEffect(() => {
+    setTaskVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [filteredTaskResults]);
+  useEffect(() => {
+    setTraderVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [filteredTraderResults]);
+  useEffect(() => {
+    setBossVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [filteredBossResults]);
+
   const handleSortSelect = useCallback((key: SortKey) => {
     setSortKey((prev) => {
       if (prev === key) {
@@ -499,80 +681,167 @@ export default function SearchScreen() {
 
   const handleOpenItem = useCallback((item: ItemSearchResult) => {
     if (!item.id) return;
-    router.push({ pathname: '/(tabs)/search/item/[id]', params: { id: item.id } });
+    router.push({
+      pathname: '/(tabs)/search/item/[id]',
+      params: {
+        id: item.id,
+        name: item.name || '',
+        shortName: item.shortName || '',
+        normalizedName: item.normalizedName || '',
+        categoryName: item.category?.name || '',
+        iconLink: item.iconLink || '',
+        gridImageLink: item.gridImageLink || '',
+        baseImageLink: item.baseImageLink || '',
+        wikiLink: item.wikiLink || '',
+      },
+    });
   }, [router]);
 
-  const handleOpenPlayer = useCallback((accountId: string) => {
+  const saveRecentPlayer = useCallback((entry: SearchResult) => {
+    const accountId = String(entry.id || '').trim();
     if (!accountId) return;
+    const name = String(entry.name || '').trim() || accountId;
+    setRecentPlayers((previous) => {
+      const next = [{ id: accountId, name }, ...previous.filter((item) => item.id !== accountId)]
+        .slice(0, RECENT_PLAYERS_MAX);
+      void AsyncStorage.setItem(RECENT_PLAYERS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleOpenPlayer = useCallback((player: SearchResult) => {
+    const accountId = String(player.id || '').trim();
+    if (!accountId) return;
+    saveRecentPlayer({ id: accountId, name: String(player.name || '').trim() || accountId });
     Keyboard.dismiss();
     router.push({ pathname: '/(tabs)/search/player', params: { accountId } });
-  }, [router]);
+  }, [router, saveRecentPlayer]);
 
   const handleOpenTask = useCallback((task: TaskDetail) => {
-    router.push({ pathname: '/(tabs)/search/task/[id]', params: { id: task.id } });
+    router.push({
+      pathname: '/(tabs)/search/task/[id]',
+      params: {
+        id: task.id,
+        name: task.name || '',
+        normalizedName: task.normalizedName || '',
+        mapName: task.map?.name || '',
+        taskImageLink: task.taskImageLink || '',
+        traderId: task.trader.id || task.trader.normalizedName || task.trader.name || '',
+        traderName: task.trader.name || '',
+        traderNormalizedName: task.trader.normalizedName || '',
+        traderImageLink: task.trader.imageLink || '',
+        minPlayerLevel: String(task.minPlayerLevel ?? 0),
+        experience: String(task.experience ?? 0),
+        kappaRequired: task.kappaRequired ? '1' : '0',
+        lightkeeperRequired: task.lightkeeperRequired ? '1' : '0',
+      },
+    });
   }, [router]);
 
-  const handleOpenTrader = useCallback((traderId: string) => {
+  const handleOpenTrader = useCallback((trader: TraderDetail) => {
+    const traderId = String(trader.id || trader.normalizedName || trader.name || '').trim();
     if (!traderId) return;
-    router.push({ pathname: '/(tabs)/search/trader/[id]', params: { id: traderId } });
+    router.push({
+      pathname: '/(tabs)/search/trader/[id]',
+      params: {
+        id: traderId,
+        name: trader.name || '',
+        normalizedName: trader.normalizedName || '',
+        imageLink: trader.imageLink || '',
+        description: trader.description || '',
+        resetTime: trader.resetTime || '',
+      },
+    });
+  }, [router]);
+
+  const handleOpenBoss = useCallback((boss: BossDetail) => {
+    const bossId = String(boss.id || boss.normalizedName || boss.name || '').trim();
+    if (!bossId) return;
+    router.push({
+      pathname: '/(tabs)/search/boss/[id]',
+      params: {
+        id: bossId,
+        name: boss.name || '',
+        normalizedName: boss.normalizedName || '',
+        imagePortraitLink: boss.imagePortraitLink || '',
+        imagePosterLink: boss.imagePosterLink || '',
+      },
+    });
+  }, [router]);
+
+  const handleOpenItemTypeCategory = useCallback((categoryName: string) => {
+    const category = String(categoryName || '').trim();
+    if (!category) return;
+    router.push({
+      pathname: '/(tabs)/search/item-types',
+      params: { category },
+    });
   }, [router]);
 
   const handleSearch = useCallback(() => {
     const query = searchText.trim();
-    if (!query && searchMode !== 'task' && searchMode !== 'trader') return;
+    if (!query && searchMode !== 'task' && searchMode !== 'trader' && searchMode !== 'boss') return;
     const isAccountIdQuery = /^\d+$/.test(query);
 
     Keyboard.dismiss();
     setInputError('');
 
     if (searchMode === 'item') {
+      playerSearchAbortRef.current?.abort();
       resetItemSearch();
       runItemSearch(query);
       return;
     }
 
     if (searchMode === 'task') {
+      itemSearchAbortRef.current?.abort();
+      playerSearchAbortRef.current?.abort();
       void tasksQuery.refetch();
       return;
     }
 
     if (searchMode === 'trader') {
+      itemSearchAbortRef.current?.abort();
+      playerSearchAbortRef.current?.abort();
       void tradersQuery.refetch();
+      return;
+    }
+    if (searchMode === 'boss') {
+      itemSearchAbortRef.current?.abort();
+      playerSearchAbortRef.current?.abort();
+      void bossesQuery.refetch();
       return;
     }
 
     if (isAndroid && !isAccountIdQuery) {
-      setInputError(
-        l(
-          '安卓仅支持输入 AccountID 搜索玩家。',
-          'Android supports AccountID-only player search.',
-          'На Android поиск игроков поддерживает только ID аккаунта.',
-        ),
-      );
+      setInputError(t.searchAndroidAccountOnlyError);
       setPlayerResults([]);
       setPlayerHasSearched(false);
       return;
     }
 
     if (!isAccountIdQuery && query.length < 3) {
-      setInputError(l('玩家名称至少输入 3 个字符。', 'Player name should be at least 3 characters.', 'Имя игрока должно содержать минимум 3 символа.'));
+      setInputError(t.searchPlayerNameTooShort);
       setPlayerResults([]);
       setPlayerHasSearched(false);
       return;
     }
 
     setHasRetriedWithFreshToken(false);
+    itemSearchAbortRef.current?.abort();
     resetPlayerSearch();
     runPlayerSearch(query);
   }, [
     isAndroid,
-    l,
     resetItemSearch,
     resetPlayerSearch,
     runItemSearch,
     runPlayerSearch,
     searchMode,
     searchText,
+    t.searchAndroidAccountOnlyError,
+    t.searchPlayerNameTooShort,
+    bossesQuery,
     tasksQuery,
     tradersQuery,
   ]);
@@ -584,14 +853,19 @@ export default function SearchScreen() {
     }
     if (searchMode === 'trader') {
       void tradersQuery.refetch();
+      return;
     }
-  }, [searchMode, tasksQuery, tradersQuery]);
+    if (searchMode === 'boss') {
+      void bossesQuery.refetch();
+    }
+  }, [bossesQuery, searchMode, tasksQuery, tradersQuery]);
 
   const handleClear = useCallback(() => {
     setSearchText('');
     setInputError('');
 
     if (searchMode === 'item') {
+      itemSearchAbortRef.current?.abort();
       setItemResults([]);
       setItemHasSearched(false);
       resetItemSearch();
@@ -605,7 +879,11 @@ export default function SearchScreen() {
     if (searchMode === 'trader') {
       return;
     }
+    if (searchMode === 'boss') {
+      return;
+    }
 
+    playerSearchAbortRef.current?.abort();
     setPlayerResults([]);
     setPlayerHasSearched(false);
     setHasRetriedWithFreshToken(false);
@@ -615,11 +893,23 @@ export default function SearchScreen() {
   const handleSearchTextChange = useCallback((value: string) => {
     setSearchText(value);
     if (inputError) setInputError('');
-  }, [inputError]);
+    if (searchMode === 'item') {
+      itemSearchAbortRef.current?.abort();
+      setItemResults([]);
+      setItemHasSearched(false);
+      resetItemSearch();
+      return;
+    }
+    if (searchMode === 'player') {
+      playerSearchAbortRef.current?.abort();
+    }
+  }, [inputError, resetItemSearch, searchMode]);
 
   const handleModeChange = useCallback((mode: SearchMode) => {
     if (mode === searchMode) return;
 
+    itemSearchAbortRef.current?.abort();
+    playerSearchAbortRef.current?.abort();
     setSearchMode(mode);
     setSearchText('');
     setInputError('');
@@ -664,14 +954,14 @@ export default function SearchScreen() {
   }, [pendingPlayerQuery, resetPlayerSearch, runPlayerSearch, searchText]);
   const handleTokenCaptureError = useCallback(() => {
     const retryQuery = pendingPlayerQuery || searchText.trim();
-    setTokenModalVisible(false);
-    setPendingPlayerQuery('');
+      setTokenModalVisible(false);
+      setPendingPlayerQuery('');
       setIsTokenResolving(false);
       setHasRetriedWithFreshToken(false);
       if (retryQuery) {
-        setInputError(l('验证失败，请重试。', 'Verification failed. Please try again.', 'Проверка не удалась. Повторите попытку.'));
+        setInputError(t.searchVerifyFailed);
       }
-  }, [l, pendingPlayerQuery, searchText]);
+  }, [pendingPlayerQuery, searchText, t.searchVerifyFailed]);
 
   const openCategoryModal = useCallback(() => {
     setDraftCategories(effectiveCategories);
@@ -833,31 +1123,34 @@ export default function SearchScreen() {
     );
   }, [handleOpenItem, language, t.searchSortPrice, t.searchUnknown]);
 
+  const renderPlayerRow = useCallback((item: SearchResult, metaText: string) => (
+    <TouchableOpacity
+      style={styles.playerRow}
+      onPress={() => handleOpenPlayer(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.playerAvatar}>
+        <User size={20} color={Colors.gold} />
+      </View>
+      <View style={styles.playerInfo}>
+        <Text style={styles.playerName} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.playerMeta} numberOfLines={1}>
+          {metaText}
+        </Text>
+      </View>
+      <ChevronRight size={18} color={Colors.textSecondary} />
+    </TouchableOpacity>
+  ), [handleOpenPlayer]);
+
   const renderPlayerResult = useCallback(({ item }: { item: SearchResult }) => {
     return (
       <View style={styles.resultRowWrap}>
-        <TouchableOpacity
-          style={styles.playerRow}
-          onPress={() => handleOpenPlayer(item.id)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.playerAvatar}>
-            <User size={20} color={Colors.gold} />
-          </View>
-          <View style={styles.playerInfo}>
-            <Text style={styles.playerName} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.playerMeta} numberOfLines={1}>
-              {l('点击查看玩家资料', 'Tap to view player profile', 'Нажмите, чтобы открыть профиль игрока')}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        {renderPlayerRow(item, t.searchPlayerTapHint)}
       </View>
     );
-  }, [handleOpenPlayer, l]);
+  }, [renderPlayerRow, t.searchPlayerTapHint]);
 
   const renderTraderResult = useCallback(({ item }: { item: TraderDetail }) => {
-    const traderId = item.id || item.normalizedName || item.name;
     const traderName = localizeTraderName(item.name, item.normalizedName, language);
     const traderDesc = localizeUnknownText(item.description, t.searchUnknown);
     const resetCountdown = formatCountdownToTimestamp(item.resetTime, nowTick);
@@ -865,7 +1158,7 @@ export default function SearchScreen() {
       <View style={styles.resultRowWrap}>
         <TouchableOpacity
           style={styles.traderRow}
-          onPress={() => handleOpenTrader(traderId)}
+          onPress={() => handleOpenTrader(item)}
           activeOpacity={0.75}
         >
           <View style={styles.traderAvatarWrap}>
@@ -889,6 +1182,51 @@ export default function SearchScreen() {
       </View>
     );
   }, [handleOpenTrader, language, nowTick, t.searchUnknown, t.traderDescription, t.traderResetTime]);
+
+  const renderBossResult = useCallback(({ item }: { item: BossDetail }) => {
+    const bossId = String(item.id || item.normalizedName || item.name || '').trim();
+    const imageUri = item.imagePortraitLink || item.imagePosterLink || '';
+    const bossName = localizeBossName(String(item.name || '-'), item.normalizedName, language);
+    const totalHp = (item.health ?? []).reduce((sum, part) => {
+      const hp = Number(part?.max ?? 0);
+      return sum + (Number.isFinite(hp) ? hp : 0);
+    }, 0);
+    const mapText = Array.from(
+      new Set(
+        (item.maps ?? [])
+          .map((mapRow) => String(mapRow?.name || '').trim())
+          .filter(Boolean),
+      ),
+    ).join(' / ');
+    return (
+      <View style={styles.resultRowWrap}>
+        <TouchableOpacity
+          style={styles.traderRow}
+          onPress={() => handleOpenBoss(item)}
+          activeOpacity={0.75}
+          disabled={!bossId}
+        >
+          <View style={styles.traderAvatarWrap}>
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.traderAvatar} contentFit="cover" />
+            ) : (
+              <View style={styles.traderAvatarFallback} />
+            )}
+          </View>
+          <View style={styles.traderInfo}>
+            <Text style={styles.traderName} numberOfLines={1}>{bossName}</Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {t.searchBossHp}: {totalHp > 0 ? totalHp : '-'}
+            </Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {mapText || t.bossNoSpawns}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    );
+  }, [handleOpenBoss, language, t.bossNoSpawns, t.searchBossHp]);
 
   const renderTaskResult = useCallback(({ item }: { item: TaskDetail }) => {
     const level = item.minPlayerLevel ?? 0;
@@ -945,51 +1283,162 @@ export default function SearchScreen() {
     );
   }, [handleOpenTask, language, t.level, t.taskAnyMap, t.taskTag3x4, t.taskTagLightkeeper]);
 
-  const isPending = searchMode === 'item'
-    ? isItemPending
-    : searchMode === 'player'
-      ? isPlayerPending
-      : searchMode === 'task'
-        ? tasksQuery.isLoading
-        : tradersQuery.isLoading;
+  const renderItemSkeletonRows = useCallback((count = 6) => (
+    <View style={styles.skeletonListWrap}>
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={`item-skeleton-${index}`} style={styles.resultRowWrap}>
+          <View style={styles.resultRow}>
+            <View style={styles.resultAvatar}>
+              <ShimmerBlock width={26} height={26} borderRadius={6} />
+            </View>
+            <View style={styles.skeletonResultInfo}>
+              <ShimmerBlock width="72%" height={14} />
+              <ShimmerBlock width="52%" height={11} />
+            </View>
+            <View style={styles.skeletonPriceInfo}>
+              <ShimmerBlock width={40} height={10} />
+              <ShimmerBlock width={58} height={14} />
+              <ShimmerBlock width={36} height={11} />
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  ), []);
+
+  const renderPlayerSkeletonRows = useCallback((count = 6) => (
+    <View style={styles.skeletonListWrap}>
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={`player-skeleton-${index}`} style={styles.resultRowWrap}>
+          <View style={styles.playerRow}>
+            <View style={styles.playerAvatar}>
+              <ShimmerBlock width={20} height={20} borderRadius={10} />
+            </View>
+            <View style={styles.playerInfo}>
+              <ShimmerBlock width="56%" height={15} />
+              <ShimmerBlock width="44%" height={12} />
+            </View>
+            <ShimmerBlock width={16} height={16} borderRadius={8} />
+          </View>
+        </View>
+      ))}
+    </View>
+  ), []);
+
+  const renderTraderSkeletonRows = useCallback((count = 6) => (
+    <View style={styles.skeletonListWrap}>
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={`trader-skeleton-${index}`} style={styles.resultRowWrap}>
+          <View style={styles.traderRow}>
+            <View style={styles.traderAvatarWrap}>
+              <ShimmerBlock width={44} height={44} borderRadius={10} />
+            </View>
+            <View style={styles.traderInfo}>
+              <ShimmerBlock width="52%" height={15} />
+              <ShimmerBlock width="64%" height={12} />
+              <ShimmerBlock width="80%" height={12} />
+            </View>
+            <ShimmerBlock width={16} height={16} borderRadius={8} />
+          </View>
+        </View>
+      ))}
+    </View>
+  ), []);
+
+  const renderTaskSkeletonRows = useCallback((count = 4) => (
+    <View style={styles.skeletonListWrap}>
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={`task-skeleton-${index}`} style={styles.resultRowWrap}>
+          <View style={styles.taskRow}>
+            <View style={styles.taskImageWrap}>
+              <ShimmerBlock width={30} height={30} borderRadius={8} />
+            </View>
+            <View style={styles.taskMain}>
+              <ShimmerBlock width="82%" height={15} />
+              <ShimmerBlock width="70%" height={15} />
+              <View style={styles.taskMetaRow}>
+                <View style={styles.taskTraderInline}>
+                  <ShimmerBlock width={20} height={20} borderRadius={6} />
+                  <ShimmerBlock width={74} height={12} />
+                </View>
+                <ShimmerBlock width={76} height={12} />
+              </View>
+              <View style={styles.taskStatsRow}>
+                <ShimmerBlock width={62} height={20} borderRadius={999} />
+                <ShimmerBlock width={58} height={20} borderRadius={999} />
+                <ShimmerBlock width={84} height={20} borderRadius={999} />
+              </View>
+            </View>
+            <View style={styles.taskChevronWrap}>
+              <ShimmerBlock width={16} height={16} borderRadius={8} />
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  ), []);
+
   const activeErrorRaw = searchMode === 'item'
-    ? (isItemError ? (itemError as Error)?.message : '')
+    ? (isItemError && !isAbortRequestError(itemError) ? (itemError as Error)?.message : '')
     : searchMode === 'player'
-      ? (isPlayerError && !isTurnstileRequiredError(playerError) ? (playerError as Error)?.message : '')
+      ? (
+        isPlayerError
+        && !isTurnstileRequiredError(playerError)
+        && !isAbortRequestError(playerError)
+          ? (playerError as Error)?.message
+          : ''
+      )
       : searchMode === 'task'
         ? (tasksQuery.isError ? (tasksQuery.error as Error)?.message : '')
-        : (tradersQuery.isError ? (tradersQuery.error as Error)?.message : '');
+        : searchMode === 'trader'
+          ? (tradersQuery.isError ? (tradersQuery.error as Error)?.message : '')
+          : (bossesQuery.isError ? (bossesQuery.error as Error)?.message : '');
   const activeError = /abort|timeout/i.test(activeErrorRaw || '')
-    ? l('请求超时，请重试。', 'Request timed out. Please retry.', 'Время запроса истекло. Повторите попытку.')
+    ? t.searchRequestTimeout
     : activeErrorRaw;
+  const showItemTypeGrid = searchMode === 'item'
+    && searchText.trim().length === 0
+    && !itemHasSearched
+    && !isItemPending;
+  const showRecentPlayers = searchMode === 'player'
+    && recentPlayers.length > 0
+    && !isPlayerPending
+    && searchText.trim().length === 0
+    && playerResults.length === 0
+    && !playerHasSearched;
+
+  const modeConfig = useMemo(() => ({
+    task: { label: t.searchModeTask, Icon: ClipboardList },
+    boss: { label: t.searchModeBoss, Icon: Skull },
+    trader: { label: t.searchModeTrader, Icon: Store },
+    item: { label: t.searchModeItem, Icon: Package },
+    player: { label: t.searchModePlayer, Icon: User },
+  }), [
+    t.searchModeBoss,
+    t.searchModeItem,
+    t.searchModePlayer,
+    t.searchModeTask,
+    t.searchModeTrader,
+  ]);
 
   const playerPlaceholder = isAndroid
-    ? l('输入AccountID', 'Enter AccountID', 'Введите ID аккаунта')
-    : l('输入玩家名称或AccountID', 'Search player name or AccountID', 'Введите имя игрока или ID аккаунта');
+    ? t.searchPlayerPlaceholderAccountId
+    : t.searchPlayerPlaceholderNameOrId;
 
-  const playerEmptyTitle = l('未找到玩家', 'No players found', 'Игроки не найдены');
+  const playerEmptyTitle = t.searchPlayerEmptyTitle;
   const playerEmptySub = isAndroid
-    ? l('请确认输入的是正确的数字 AccountID', 'Please verify the numeric AccountID', 'Проверьте корректность числового ID аккаунта')
-    : l('尝试更精确的玩家名称', 'Try a more precise player name', 'Попробуйте более точное имя');
+    ? t.searchPlayerEmptySubAccountId
+    : t.searchPlayerEmptySubName;
 
-  const loadingText = searchMode === 'item'
-    ? t.searchDownloading
-    : searchMode === 'player'
-      ? isTokenResolving
-        ? l('正在完成验证...', 'Verifying...', 'Проверка...')
-        : isAndroid
-          ? l('正在查询账号...', 'Looking up account...', 'Получаем данные аккаунта...')
-          : l('正在搜索玩家...', 'Searching players...', 'Ищем игроков...')
-      : searchMode === 'task'
-        ? t.tasksLoading
-        : t.searchTraderTitle;
   const headerTitle = searchMode === 'item'
     ? t.searchHeaderTitle
     : searchMode === 'player'
-      ? l('玩家搜索', 'Player Search', 'Поиск игроков')
+      ? t.searchPlayerTitle
       : searchMode === 'task'
         ? t.tasksHeaderTitle
-        : t.searchTraderTitle;
+        : searchMode === 'trader'
+          ? t.searchTraderTitle
+          : t.searchBossTitle;
   const listTopInset = headerHeight + 10;
   const listBottomInset = Math.max(insets.bottom + 24, 30);
   const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
@@ -1002,48 +1451,31 @@ export default function SearchScreen() {
   const listHeaderContent = (
     <>
       <View style={styles.searchSection}>
-        <View style={styles.modeSwitch}>
-          <TouchableOpacity
-            style={[styles.modeButton, searchMode === 'item' && styles.modeButtonActive]}
-            onPress={() => handleModeChange('item')}
-            activeOpacity={0.8}
-          >
-            <Package size={14} color={searchMode === 'item' ? Colors.text : Colors.textSecondary} />
-            <Text style={[styles.modeButtonText, searchMode === 'item' && styles.modeButtonTextActive]}>
-              {l('物品', 'Items', 'Предметы')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, searchMode === 'player' && styles.modeButtonActive]}
-            onPress={() => handleModeChange('player')}
-            activeOpacity={0.8}
-          >
-            <User size={14} color={searchMode === 'player' ? Colors.text : Colors.textSecondary} />
-            <Text style={[styles.modeButtonText, searchMode === 'player' && styles.modeButtonTextActive]}>
-              {l('玩家', 'Players', 'Игроки')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, searchMode === 'task' && styles.modeButtonActive]}
-            onPress={() => handleModeChange('task')}
-            activeOpacity={0.8}
-          >
-            <ClipboardList size={14} color={searchMode === 'task' ? Colors.text : Colors.textSecondary} />
-            <Text style={[styles.modeButtonText, searchMode === 'task' && styles.modeButtonTextActive]}>
-              {l('任务', 'Tasks', 'Задания')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, searchMode === 'trader' && styles.modeButtonActive]}
-            onPress={() => handleModeChange('trader')}
-            activeOpacity={0.8}
-          >
-            <Store size={14} color={searchMode === 'trader' ? Colors.text : Colors.textSecondary} />
-            <Text style={[styles.modeButtonText, searchMode === 'trader' && styles.modeButtonTextActive]}>
-              {l('商人', 'Traders', 'Торговцы')}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.modeSwitchScroll}
+          contentContainerStyle={styles.modeSwitch}
+        >
+          {SEARCH_MODE_ORDER.map((mode) => {
+            const config = modeConfig[mode];
+            const active = searchMode === mode;
+            const Icon = config.Icon;
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.modeButton, active && styles.modeButtonActive]}
+                onPress={() => handleModeChange(mode)}
+                activeOpacity={0.8}
+              >
+                <Icon size={14} color={active ? Colors.text : Colors.textSecondary} />
+                <Text style={[styles.modeButtonText, active && styles.modeButtonTextActive]}>
+                  {config.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         <View style={styles.searchRow}>
           <View style={styles.searchInputWrap}>
@@ -1057,7 +1489,9 @@ export default function SearchScreen() {
                     ? playerPlaceholder
                     : searchMode === 'task'
                       ? t.tasksSearchPlaceholder
-                      : t.searchTraderPlaceholder
+                      : searchMode === 'trader'
+                        ? t.searchTraderPlaceholder
+                        : t.searchBossPlaceholder
               }
               placeholderTextColor={Colors.textTertiary}
               value={searchText}
@@ -1090,18 +1524,58 @@ export default function SearchScreen() {
             {activeError}
           </Text>
         )}
-        {!inputError && !!activeError && (searchMode === 'task' || searchMode === 'trader') && (
+        {!inputError && !!activeError && (searchMode === 'task' || searchMode === 'trader' || searchMode === 'boss') && (
           <TouchableOpacity style={styles.inlineRetryButton} onPress={handleRefetchActiveMode} activeOpacity={0.8}>
             <Text style={styles.inlineRetryText}>{t.retry}</Text>
           </TouchableOpacity>
         )}
         {searchMode === 'player' && isAndroid && !inputError && !activeError && (
           <Text style={styles.searchHint}>
-            {l('安卓仅支持 AccountID 搜索。', 'Android supports AccountID-only search.', 'На Android поддерживается только поиск по ID аккаунта.')}
+            {t.searchPlayerAndroidHint}
           </Text>
         )}
 
       </View>
+
+      {showRecentPlayers && (
+        <View style={styles.playerRecentSection}>
+          <Text style={styles.playerRecentTitle}>{t.searchPlayerRecentTitle}</Text>
+          {recentPlayers.map((player) => (
+            <View key={`recent-player-${player.id}`} style={styles.resultRowWrap}>
+              {renderPlayerRow(player, `${t.accountId}: ${player.id}`)}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {showItemTypeGrid && (
+        <View style={styles.itemTypeGridSection}>
+          {itemTypeCategoriesQuery.isLoading ? (
+            <View style={styles.itemTypeLoadingWrap}>
+              <ShimmerBlock width={190} height={14} />
+            </View>
+          ) : itemTypeCategoriesQuery.isError ? (
+            <Text style={styles.errorText}>
+              {(itemTypeCategoriesQuery.error as Error)?.message || ''}
+            </Text>
+          ) : (
+            <View style={styles.itemTypeGrid}>
+              {topLevelItemTypes.map((category) => (
+                <TouchableOpacity
+                  key={category}
+                  style={styles.itemTypeCard}
+                  onPress={() => handleOpenItemTypeCategory(category)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.itemTypeCardText} numberOfLines={2}>
+                    {localizeCategoryName(category, language)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {searchMode === 'item' && itemResults.length > 0 && (
         <View style={styles.filtersSection}>
@@ -1197,12 +1671,6 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {(isPending || (searchMode === 'player' && isTokenResolving)) && (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color={Colors.gold} />
-          <Text style={styles.loadingText}>{loadingText}</Text>
-        </View>
-      )}
     </>
   );
 
@@ -1210,73 +1678,111 @@ export default function SearchScreen() {
     <View style={styles.container}>
       {searchMode === 'item' ? (
         <FlatList
-          data={filteredItemResults}
+          data={visibleItemResults}
           keyExtractor={(item) => item.id}
           renderItem={renderItemResult}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMoreItems}
+          onEndReachedThreshold={0.35}
           ListHeaderComponent={listHeaderContent}
           ListEmptyComponent={
-            !isItemPending && filteredItemResults.length === 0 && itemHasSearched ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>{t.searchNoPlayers}</Text>
-                <Text style={styles.emptySubtitle}>{t.searchNoPlayersSub}</Text>
-              </View>
-            ) : null
+            isItemPending ? renderItemSkeletonRows() : (
+              filteredItemResults.length === 0 && itemHasSearched ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{t.searchNoPlayers}</Text>
+                  <Text style={styles.emptySubtitle}>{t.searchNoPlayersSub}</Text>
+                </View>
+              ) : null
+            )
           }
           contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
         />
       ) : searchMode === 'player' ? (
         <FlatList
-          data={playerResults}
+          data={visiblePlayerResults}
           keyExtractor={(item) => `${item.id}-${item.name}`}
           renderItem={renderPlayerResult}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMorePlayers}
+          onEndReachedThreshold={0.35}
           ListHeaderComponent={listHeaderContent}
           ListEmptyComponent={
-            !isPlayerPending && playerResults.length === 0 && playerHasSearched ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>{playerEmptyTitle}</Text>
-                <Text style={styles.emptySubtitle}>{playerEmptySub}</Text>
-              </View>
-            ) : null
+            isPlayerPending || isTokenResolving ? renderPlayerSkeletonRows() : (
+              playerResults.length === 0 && playerHasSearched ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{playerEmptyTitle}</Text>
+                  <Text style={styles.emptySubtitle}>{playerEmptySub}</Text>
+                </View>
+              ) : null
+            )
           }
           contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
         />
       ) : searchMode === 'task' ? (
         <FlatList
-          data={filteredTaskResults}
+          data={visibleTaskResults}
           keyExtractor={(item) => item.id}
           renderItem={renderTaskResult}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMoreTasks}
+          onEndReachedThreshold={0.35}
           ListHeaderComponent={listHeaderContent}
           ListEmptyComponent={
-            !tasksQuery.isLoading && filteredTaskResults.length === 0 ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>{t.tasksNoResults}</Text>
-                <Text style={styles.emptySubtitle}>{t.tasksNoResultsSub}</Text>
-              </View>
-            ) : null
+            tasksQuery.isLoading ? renderTaskSkeletonRows() : (
+              filteredTaskResults.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{t.tasksNoResults}</Text>
+                  <Text style={styles.emptySubtitle}>{t.tasksNoResultsSub}</Text>
+                </View>
+              ) : null
+            )
+          }
+          contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
+        />
+      ) : searchMode === 'trader' ? (
+        <FlatList
+          data={visibleTraderResults}
+          keyExtractor={(item) => item.id}
+          renderItem={renderTraderResult}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMoreTraders}
+          onEndReachedThreshold={0.35}
+          ListHeaderComponent={listHeaderContent}
+          ListEmptyComponent={
+            tradersQuery.isLoading ? renderTraderSkeletonRows() : (
+              filteredTraderResults.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{t.searchNoTraders}</Text>
+                  <Text style={styles.emptySubtitle}>{t.searchNoTradersSub}</Text>
+                </View>
+              ) : null
+            )
           }
           contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
         />
       ) : (
         <FlatList
-          data={filteredTraderResults}
+          data={visibleBossResults}
           keyExtractor={(item) => item.id}
-          renderItem={renderTraderResult}
+          renderItem={renderBossResult}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMoreBosses}
+          onEndReachedThreshold={0.35}
           ListHeaderComponent={listHeaderContent}
           ListEmptyComponent={
-            !tradersQuery.isLoading && filteredTraderResults.length === 0 ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>{t.searchNoTraders}</Text>
-                <Text style={styles.emptySubtitle}>{t.searchNoTradersSub}</Text>
-              </View>
-            ) : null
+            bossesQuery.isLoading ? renderTraderSkeletonRows() : (
+              filteredBossResults.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{t.searchNoBosses}</Text>
+                  <Text style={styles.emptySubtitle}>{t.searchNoBossesSub}</Text>
+                </View>
+              ) : null
+            )
           }
           contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
         />
@@ -1551,10 +2057,13 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 10,
   },
+  modeSwitchScroll: {
+    marginHorizontal: -2,
+  },
   modeSwitch: {
     flexDirection: 'row',
     gap: 8,
-    flexWrap: 'wrap',
+    paddingRight: 8,
   },
   modeButton: {
     flexDirection: 'row',
@@ -1633,6 +2142,19 @@ const styles = StyleSheet.create({
   searchHint: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  playerRecentSection: {
+    paddingBottom: 4,
+    gap: 2,
+  },
+  playerRecentTitle: {
+    paddingHorizontal: 20,
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom: 2,
   },
   filtersSection: {
     paddingHorizontal: 20,
@@ -1714,8 +2236,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
+  itemTypeGridSection: {
+    paddingHorizontal: 20,
+    paddingTop: 2,
+    paddingBottom: 10,
+  },
+  itemTypeLoadingWrap: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  itemTypeCard: {
+    width: '48%',
+    minHeight: 54,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  itemTypeCardText: {
+    fontSize: 12,
+    color: Colors.text,
+    fontWeight: '600' as const,
+  },
   listContent: {
     paddingBottom: 24,
+  },
+  skeletonListWrap: {
+    paddingTop: 2,
+    paddingBottom: 8,
+    gap: 0,
+  },
+  skeletonResultInfo: {
+    flex: 1,
+    marginHorizontal: 10,
+    gap: 6,
+    justifyContent: 'center',
+  },
+  skeletonPriceInfo: {
+    minWidth: 84,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
   },
   resultRowWrap: {
     paddingHorizontal: 16,
@@ -1979,15 +2549,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingLeft: 2,
   },
-  loadingWrap: {
-    paddingVertical: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
   emptyWrap: {
     padding: 32,
     alignItems: 'center',
@@ -2078,6 +2639,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
 });
+
 
 
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Keyboard, ScrollView, Alert, Modal, Platform, type LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, ScrollView, Alert, Modal, Platform, type LayoutChangeEvent } from 'react-native';
 import { User } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import Colors from '@/constants/colors';
@@ -13,6 +13,7 @@ import {
 } from '@/services/tarkovApi';
 import { PlayerProfile, SearchResult } from '@/types/tarkov';
 import TurnstileTokenModal from '@/components/TurnstileTokenModal';
+import ShimmerBlock from '@/components/ShimmerBlock';
 
 interface AccountBindingPanelProps {
   onBound?: () => void;
@@ -445,7 +446,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
         >
           {loading ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator color="#1A1A14" size="small" />
+              <ShimmerBlock width={16} height={16} borderRadius={8} />
               <Text style={styles.searchButtonText}>
                 {isTokenResolving
                   ? l('正在完成验证...', 'Verifying...', 'Проверка...')
@@ -545,7 +546,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
           />
           {isAndroidWebBinding && (
             <View style={styles.webModalLoadingOverlay} pointerEvents="none">
-              <ActivityIndicator size="small" color={Colors.gold} />
+              <ShimmerBlock width={140} height={14} />
               <Text style={styles.webModalLoadingText}>
                 {l('正在绑定账号...', 'Binding account...', 'Привязка аккаунта...')}
               </Text>
@@ -568,7 +569,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
 
             {isPreviewLoading && (
               <View style={styles.previewLoadingWrap}>
-                <ActivityIndicator size="small" color={Colors.gold} />
+                <ShimmerBlock width={140} height={14} />
                 <Text style={styles.previewLoadingText}>{l('加载玩家详情中...', 'Loading player details...', 'Загружаем данные игрока...')}</Text>
               </View>
             )}
@@ -605,7 +606,7 @@ export default function AccountBindingPanel({ onBound, onSearchInputFocus }: Acc
                 disabled={!previewProfile || isPreviewLoading || isLinking}
               >
                 {isLinking ? (
-                  <ActivityIndicator size="small" color="#1A1A14" />
+                  <ShimmerBlock width={56} height={14} />
                 ) : (
                   <Text style={styles.previewConfirmText}>
                     {isRebinding ? l('确认换绑', 'Confirm Rebind', 'Подтвердить смену') : l('确认绑定', 'Confirm Bind', 'Подтвердить привязку')}

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,26 +6,29 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
-  ActivityIndicator,
   ScrollView,
   Modal,
   Pressable,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { ChevronRight, Search, Filter } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useLanguage } from '@/providers/LanguageProvider';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
-import { fetchTasks } from '@/services/tarkovApi';
+import { fetchTaskSummaries } from '@/services/tarkovApi';
 import type { TaskDetail } from '@/types/tarkov';
+import ShimmerBlock from '@/components/ShimmerBlock';
+
+const TASK_LIST_PAGE_SIZE = 40;
+const TASK_FETCH_PAGE_SIZE = 80;
 
 function formatTaskMeta(task: TaskDetail, anyMapLabel: string): string {
   const mapName = task.map?.name || anyMapLabel;
-  return `${task.trader.name} • ${mapName}`;
+  return `${task.trader.name} · ${mapName}`;
 }
 
 function getTaskXp(task: TaskDetail): string {
@@ -62,14 +65,27 @@ export default function TasksScreen() {
   const [factionModalOpen, setFactionModalOpen] = useState(false);
   const [only3x4Required, setOnly3x4Required] = useState(false);
   const [onlyLightkeeperRequired, setOnlyLightkeeperRequired] = useState(false);
+  const [visibleTaskCount, setVisibleTaskCount] = useState<number>(TASK_LIST_PAGE_SIZE);
 
-  const tasksQuery = useQuery({
-    queryKey: ['tasks', language],
-    queryFn: () => fetchTasks(language),
+  const tasksQuery = useInfiniteQuery({
+    queryKey: ['tasks-paged', language],
+    initialPageParam: 0,
+    queryFn: ({ signal, pageParam }) => fetchTaskSummaries(language, {
+      signal,
+      limit: TASK_FETCH_PAGE_SIZE,
+      offset: pageParam,
+    }),
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < TASK_FETCH_PAGE_SIZE) return undefined;
+      return allPages.reduce((sum, page) => sum + page.length, 0);
+    },
     staleTime: 30 * 60 * 1000,
   });
 
-  const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+  const allTasks = useMemo(
+    () => tasksQuery.data?.pages.flatMap((page) => page ?? []) ?? [],
+    [tasksQuery.data],
+  );
   const traderOptions = useMemo(() => {
     const map = new Map<string, string>();
     allTasks.forEach((task) => {
@@ -156,6 +172,25 @@ export default function TasksScreen() {
     selectedLevelSet,
     selectedTraderSet,
   ]);
+
+  const visibleTasks = useMemo(
+    () => filteredTasks.slice(0, visibleTaskCount),
+    [filteredTasks, visibleTaskCount],
+  );
+  const handleLoadMoreTasks = useCallback(() => {
+    if (tasksQuery.isLoading || tasksQuery.isFetchingNextPage) return;
+    if (visibleTaskCount < filteredTasks.length) {
+      setVisibleTaskCount((prev) => Math.min(prev + TASK_LIST_PAGE_SIZE, filteredTasks.length));
+      return;
+    }
+    if (tasksQuery.hasNextPage) {
+      void tasksQuery.fetchNextPage();
+    }
+  }, [filteredTasks.length, tasksQuery, visibleTaskCount]);
+
+  useEffect(() => {
+    setVisibleTaskCount(TASK_LIST_PAGE_SIZE);
+  }, [filteredTasks]);
 
   const listTopInset = headerHeight + 8;
   const listBottomInset = Math.max(insets.bottom + 24, 30);
@@ -345,15 +380,26 @@ export default function TasksScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={filteredTasks}
+        data={visibleTasks}
         keyExtractor={(item) => item.id}
         renderItem={renderTaskRow}
         keyboardShouldPersistTaps="handled"
+        onEndReached={handleLoadMoreTasks}
+        onEndReachedThreshold={0.35}
         ListHeaderComponent={listHeader}
+        ListFooterComponent={
+          tasksQuery.isFetchingNextPage ? (
+            <View style={styles.listFooterLoading}>
+              <ShimmerBlock height={14} width={140} />
+              <ShimmerBlock height={12} width={100} />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
-          tasksQuery.isLoading ? (
+          tasksQuery.isLoading && allTasks.length === 0 ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color={Colors.gold} />
+              <ShimmerBlock width={180} height={14} />
+              <ShimmerBlock width={130} height={12} />
               <Text style={styles.loadingText}>{t.tasksLoading}</Text>
             </View>
           ) : (
@@ -673,6 +719,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  listFooterLoading: {
+    marginTop: 4,
+    marginBottom: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
   loadingText: {
     color: Colors.textSecondary,
     fontSize: 13,
@@ -769,3 +821,4 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
 });
+

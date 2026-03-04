@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react-native';
@@ -7,6 +7,7 @@ import Colors from '@/constants/colors';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
+import PlayerProfileSkeleton from '@/components/PlayerProfileSkeleton';
 
 export default function PlayerDetailScreen() {
   const { accountId } = useLocalSearchParams<{ accountId: string }>();
@@ -15,12 +16,12 @@ export default function PlayerDetailScreen() {
 
   const profileQuery = useQuery({
     queryKey: ['profile', accountId],
-    queryFn: () => fetchPlayerProfile(accountId!),
+    queryFn: ({ signal }) => fetchPlayerProfile(accountId!, { signal }),
     enabled: !!accountId,
-    staleTime: 0,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: true,
-    gcTime: 0,
+    staleTime: 2 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 10 * 60 * 1000,
   });
 
   const handleRefresh = React.useCallback(async () => {
@@ -33,11 +34,10 @@ export default function PlayerDetailScreen() {
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
-      <View style={styles.centerContainer}>
+      <>
         <Stack.Screen options={{ title: t.playerProfile }} />
-        <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.loadingText}>{t.loadingProfile}</Text>
-      </View>
+        <PlayerProfileSkeleton />
+      </>
     );
   }
 
@@ -60,10 +60,10 @@ export default function PlayerDetailScreen() {
 
   if (!profileQuery.data) {
     return (
-      <View style={styles.centerContainer}>
+      <>
         <Stack.Screen options={{ title: t.playerProfile }} />
-        <ActivityIndicator size="large" color={Colors.gold} />
-      </View>
+        <PlayerProfileSkeleton />
+      </>
     );
   }
 

@@ -1,16 +1,27 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Linking,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import Svg, { Line, Polyline, Text as SvgText } from 'react-native-svg';
-import { AlertTriangle, Store } from 'lucide-react-native';
+import { AlertTriangle, ExternalLink, Store } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { localizeCategoryName, localizeTraderName } from '@/constants/i18n';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchItemDetail, fetchTraders } from '@/services/tarkovApi';
-import { ItemDetailProperties, ItemPriceEntry } from '@/types/tarkov';
+import { ItemDetail, ItemDetailProperties, ItemPriceEntry } from '@/types/tarkov';
 import { formatPrice } from '@/utils/helpers';
 import FullScreenImageModal from '@/components/FullScreenImageModal';
+import ShimmerBlock from '@/components/ShimmerBlock';
+import FullscreenSkeleton from '@/components/FullscreenSkeleton';
 
 function renderPercent(value?: number | null): string {
   if (value === undefined || value === null || Number.isNaN(value)) return '-';
@@ -40,26 +51,6 @@ function normalizeTokenLabel(value: string): string {
 function priceEntryLabel(item: ItemPriceEntry | undefined, fallback: string): string {
   if (!item) return fallback;
   return item.vendor?.name || item.source || fallback;
-}
-
-const TRADER_NAME_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  fence: { zh: '黑商', ru: 'Fence' },
-  prapor: { zh: '俄商', ru: 'Prapor' },
-  therapist: { zh: '大妈', ru: 'Therapist' },
-  skier: { zh: '小蓝帽', ru: 'Skier' },
-  peacekeeper: { zh: '美商', ru: 'Peacekeeper' },
-  mechanic: { zh: '机械师', ru: 'Mechanic' },
-  ragman: { zh: '服装商', ru: 'Ragman' },
-  jaeger: { zh: '杰哥', ru: 'Jaeger' },
-  lightkeeper: { zh: '灯塔商人', ru: 'Lightkeeper' },
-  ref: { zh: 'Ref', ru: 'Ref' },
-};
-
-function localizeTraderName(name: string, normalizedName: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const normalized = (normalizedName || name).trim().toLowerCase();
-  const mapped = TRADER_NAME_TRANSLATIONS[normalized];
-  return mapped?.[language] || name;
 }
 
 const HISTORY_CHART_HEIGHT = 176;
@@ -110,8 +101,63 @@ function formatPriceTick(value: number): string {
 }
 
 export default function ItemDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string | string[] }>();
+  const {
+    id,
+    name,
+    shortName,
+    normalizedName,
+    categoryName,
+    iconLink,
+    gridImageLink,
+    baseImageLink,
+    wikiLink,
+  } = useLocalSearchParams<{
+    id: string | string[];
+    name?: string | string[];
+    shortName?: string | string[];
+    normalizedName?: string | string[];
+    categoryName?: string | string[];
+    iconLink?: string | string[];
+    gridImageLink?: string | string[];
+    baseImageLink?: string | string[];
+    wikiLink?: string | string[];
+  }>();
   const itemId = Array.isArray(id) ? id[0] : id;
+  const getParam = useCallback((value?: string | string[]) => {
+    if (Array.isArray(value)) return String(value[0] || '').trim();
+    return String(value || '').trim();
+  }, []);
+  const previewData = useMemo<ItemDetail | null>(() => {
+    const previewId = String(itemId || '').trim();
+    if (!previewId) return null;
+    const previewName = getParam(name) || previewId;
+    const previewCategory = getParam(categoryName);
+    return {
+      id: previewId,
+      name: previewName,
+      normalizedName: getParam(normalizedName) || previewName.toLowerCase(),
+      shortName: getParam(shortName) || previewName,
+      category: previewCategory ? { name: previewCategory } : undefined,
+      iconLink: getParam(iconLink) || undefined,
+      gridImageLink: getParam(gridImageLink) || undefined,
+      baseImageLink: getParam(baseImageLink) || undefined,
+      wikiLink: getParam(wikiLink) || undefined,
+      buyFor: [] as ItemPriceEntry[],
+      sellFor: [] as ItemPriceEntry[],
+      historicalPrices: [],
+    };
+  }, [
+    baseImageLink,
+    categoryName,
+    getParam,
+    gridImageLink,
+    iconLink,
+    itemId,
+    name,
+    normalizedName,
+    shortName,
+    wikiLink,
+  ]);
   const { t, language } = useLanguage();
   const router = useRouter();
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -120,19 +166,30 @@ export default function ItemDetailScreen() {
 
   const itemQuery = useQuery({
     queryKey: ['item-detail', itemId, language],
-    queryFn: () => fetchItemDetail(itemId!, language),
+    queryFn: ({ signal }) => fetchItemDetail(itemId!, language, { signal }),
     enabled: !!itemId,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
   const tradersQuery = useQuery({
     queryKey: ['traders', language],
-    queryFn: () => fetchTraders(language),
+    queryFn: ({ signal }) => fetchTraders(language, { signal }),
     staleTime: 30 * 60 * 1000,
   });
 
-  const data = itemQuery.data ?? null;
+  const data: ItemDetail | null = itemQuery.data ?? previewData;
+  const isHydratingDetails = !itemQuery.data && itemQuery.isFetching && !!previewData;
   const title = data?.name || t.itemDetailsTitle;
   const detailImageUri = data?.image512pxLink || data?.image8xLink || data?.inspectImageLink || data?.gridImageLink || data?.baseImageLink || data?.iconLink || null;
+  const heroAliasText = useMemo(() => {
+    const raw = String(data?.shortName || data?.normalizedName || '').trim();
+    if (!raw) return '-';
+    return localizeCategoryName(raw, language) || raw;
+  }, [data?.normalizedName, data?.shortName, language]);
+  const heroCategoryText = useMemo(() => {
+    const raw = String(data?.category?.name || '').trim();
+    if (raw) return localizeCategoryName(raw, language) || raw;
+    return `${t.itemIdLabel}: ${data?.id || '-'}`;
+  }, [data?.category?.name, data?.id, language, t.itemIdLabel]);
 
   const traderMap = useMemo(() => {
     const map = new Map<string, { id: string; normalizedName: string; name: string; imageLink?: string }>();
@@ -232,7 +289,15 @@ export default function ItemDetailScreen() {
     const typeValue = (data.types ?? [])
       .map((type) => String(type || '').trim())
       .filter(Boolean)
-      .map((type) => t.itemTypeLabels[type] || t.itemTypeLabels[type.toLowerCase()] || normalizeTokenLabel(type))
+      .map((type) => {
+        const normalized = type.toLowerCase();
+        return (
+          t.itemTypeLabels[type]
+          || t.itemTypeLabels[normalized]
+          || localizeCategoryName(type, language)
+          || normalizeTokenLabel(type)
+        );
+      })
       .join(' / ');
 
     push('types', labelFor('types', t.searchFilterType), typeValue || '-');
@@ -321,7 +386,7 @@ export default function ItemDetailScreen() {
     }
 
     return rows.map((row) => ({ label: row.label, value: row.value }));
-  }, [data, t]);
+  }, [data, language, t]);
 
   const historyChartPoints = useMemo(() => {
     if (!data?.historicalPrices?.length) return [];
@@ -420,6 +485,16 @@ export default function ItemDetailScreen() {
     setPreviewUri(null);
   }, []);
 
+  const openWiki = useCallback(async () => {
+    const url = String(data?.wikiLink || '').trim();
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      // ignore open-url failure
+    }
+  }, [data?.wikiLink]);
+
   const openTrader = useCallback((traderId: string) => {
     if (!traderId) return;
     router.push({ pathname: '/(tabs)/search/trader/[id]', params: { id: traderId } });
@@ -434,11 +509,10 @@ export default function ItemDetailScreen() {
 
   if (itemQuery.isLoading && !data) {
     return (
-      <View style={styles.centerWrap}>
+      <>
         <Stack.Screen options={{ title: t.itemDetailsTitle }} />
-        <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.hintText}>{t.searchDownloading}</Text>
-      </View>
+        <FullscreenSkeleton message={t.searchDownloading} />
+      </>
     );
   }
 
@@ -473,24 +547,45 @@ export default function ItemDetailScreen() {
               </TouchableOpacity>
               <View style={styles.heroInfo}>
                 <Text style={styles.heroTitle}>{data.name}</Text>
-                <Text style={styles.heroSub}>{data.shortName || data.normalizedName || '-'}</Text>
-                <Text style={styles.heroSub}>{data.category?.name || `ID: ${data.id}`}</Text>
+                <Text style={styles.heroSub}>{heroAliasText}</Text>
+                <Text style={styles.heroSub}>{heroCategoryText}</Text>
+                {data.wikiLink ? (
+                  <TouchableOpacity style={styles.wikiButton} onPress={openWiki} activeOpacity={0.75}>
+                    <ExternalLink size={14} color={Colors.gold} />
+                    <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.itemSectionFlea}</Text>
-              {fleaRows.map((row) => (
-                <View key={row.label} style={styles.row}>
-                  <Text style={styles.rowLabel}>{row.label}</Text>
-                  <Text style={styles.rowValue}>{row.value}</Text>
+              {isHydratingDetails ? (
+                <View style={styles.skeletonList}>
+                  <ShimmerBlock height={14} />
+                  <ShimmerBlock height={14} width="92%" />
+                  <ShimmerBlock height={14} width="86%" />
+                  <ShimmerBlock height={14} width="90%" />
                 </View>
-              ))}
+              ) : (
+                fleaRows.map((row) => (
+                  <View key={row.label} style={styles.row}>
+                    <Text style={styles.rowLabel}>{row.label}</Text>
+                    <Text style={styles.rowValue}>{row.value}</Text>
+                  </View>
+                ))
+              )}
             </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.itemSectionBuy}</Text>
-              {(data.buyFor ?? []).length === 0 ? (
+              {isHydratingDetails ? (
+                <View style={styles.skeletonList}>
+                  <ShimmerBlock height={44} borderRadius={10} />
+                  <ShimmerBlock height={44} borderRadius={10} />
+                  <ShimmerBlock height={44} borderRadius={10} />
+                </View>
+              ) : (data.buyFor ?? []).length === 0 ? (
                 <Text style={styles.emptyText}>{t.itemNoBuyData}</Text>
               ) : (
                 (data.buyFor ?? []).slice(0, 8).map((entry, idx) => (
@@ -531,7 +626,13 @@ export default function ItemDetailScreen() {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.itemSectionTraders}</Text>
-              {(data.sellFor ?? []).length === 0 ? (
+              {isHydratingDetails ? (
+                <View style={styles.skeletonList}>
+                  <ShimmerBlock height={44} borderRadius={10} />
+                  <ShimmerBlock height={44} borderRadius={10} />
+                  <ShimmerBlock height={44} borderRadius={10} />
+                </View>
+              ) : (data.sellFor ?? []).length === 0 ? (
                 <Text style={styles.emptyText}>{t.itemNoTraderData}</Text>
               ) : (
                 (data.sellFor ?? []).slice(0, 8).map((entry, idx) => (
@@ -572,7 +673,15 @@ export default function ItemDetailScreen() {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.itemSectionAttributes}</Text>
-              {attributeRows.length === 0 ? (
+              {isHydratingDetails ? (
+                <View style={styles.skeletonList}>
+                  <ShimmerBlock height={14} />
+                  <ShimmerBlock height={14} width="93%" />
+                  <ShimmerBlock height={14} width="88%" />
+                  <ShimmerBlock height={14} width="81%" />
+                  <ShimmerBlock height={14} width="90%" />
+                </View>
+              ) : attributeRows.length === 0 ? (
                 <Text style={styles.emptyText}>{t.itemNoAttributes}</Text>
               ) : (
                 attributeRows.map((row) => (
@@ -586,7 +695,12 @@ export default function ItemDetailScreen() {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.itemSectionHistory}</Text>
-              {historyChartPoints.length >= 2 ? (
+              {isHydratingDetails ? (
+                <View style={styles.skeletonList}>
+                  <ShimmerBlock height={HISTORY_CHART_HEIGHT - 26} borderRadius={10} />
+                  <ShimmerBlock height={14} width="70%" />
+                </View>
+              ) : historyChartPoints.length >= 2 ? (
                 <View style={styles.historyChartWrap} onLayout={handleHistoryChartLayout}>
                   {historyChartWidth > 0 && historyChartGeometry ? (
                     <Svg width={historyChartWidth} height={HISTORY_CHART_HEIGHT}>
@@ -656,7 +770,7 @@ export default function ItemDetailScreen() {
                   ) : null}
                 </View>
               ) : null}
-              {historyChartPoints.length < 2 ? (
+              {!isHydratingDetails && historyChartPoints.length < 2 ? (
                 <Text style={styles.emptyText}>{t.itemNoHistory}</Text>
               ) : null}
             </View>
@@ -743,6 +857,24 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
   },
+  wikiButton: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.goldDim,
+    backgroundColor: 'rgba(217,191,115,0.16)',
+  },
+  wikiButtonText: {
+    color: Colors.gold,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
   section: {
     backgroundColor: Colors.card,
     borderRadius: 14,
@@ -750,6 +882,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    gap: 8,
+  },
+  skeletonList: {
     gap: 8,
   },
   sectionTitle: {
@@ -761,14 +896,14 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
     minHeight: 20,
   },
   rowLabelWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
     flex: 1,
   },
@@ -799,6 +934,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
     flex: 1,
+    lineHeight: 17,
   },
   rowValue: {
     color: Colors.text,
@@ -806,6 +942,9 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     fontVariant: ['tabular-nums'],
     textAlign: 'right',
+    flexShrink: 1,
+    maxWidth: '58%',
+    lineHeight: 18,
   },
   historyChartWrap: {
     height: HISTORY_CHART_HEIGHT,

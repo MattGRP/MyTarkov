@@ -260,13 +260,21 @@ function getItemImageSource(
   return getItemImageURL(tpl);
 }
 
+function appendCacheBust(uri: string, token: string): string {
+  if (!uri) return uri;
+  const separator = uri.includes('?') ? '&' : '?';
+  return `${uri}${separator}__r=${encodeURIComponent(token)}`;
+}
+
 function ItemGridImage({
   imageUri,
   fallbackUri,
+  refreshComposed,
   grid,
 }: {
   imageUri: string;
   fallbackUri?: string;
+  refreshComposed?: boolean;
   grid: ReturnType<typeof getGridSize>;
 }) {
   const [resolvedUri, setResolvedUri] = useState(imageUri);
@@ -274,6 +282,25 @@ function ItemGridImage({
   useEffect(() => {
     setResolvedUri(imageUri);
   }, [imageUri]);
+
+  useEffect(() => {
+    if (!refreshComposed) return;
+    let cancelled = false;
+    const timers = [
+      setTimeout(() => {
+        if (cancelled) return;
+        setResolvedUri(appendCacheBust(imageUri, `1-${Date.now()}`));
+      }, 900),
+      setTimeout(() => {
+        if (cancelled) return;
+        setResolvedUri(appendCacheBust(imageUri, `2-${Date.now()}`));
+      }, 2200),
+    ];
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [imageUri, refreshComposed]);
 
   const showGrid = grid.width > 1 || grid.height > 1;
   const vLines = Array.from({ length: grid.width + 1 }, (_, i) => i);
@@ -286,6 +313,7 @@ function ItemGridImage({
         style={[styles.itemImage, { width: grid.displayWidth, height: grid.displayHeight }]}
         contentFit="contain"
         contentPosition="center"
+        cachePolicy={refreshComposed ? 'none' : 'memory-disk'}
         onError={() => {
           if (fallbackUri && resolvedUri !== fallbackUri) {
             setResolvedUri(fallbackUri);
@@ -438,6 +466,7 @@ function EquipmentRow({
   const sizeLabel = grid.width && grid.height ? `${grid.width}x${grid.height}` : undefined;
   const imageUri = imageUriOverride ?? getItemImageSource(item._tpl, itemMeta);
   const fallbackImageUri = getItemImageSource(item._tpl, itemMeta);
+  const isComposedImage = Boolean(imageUriOverride);
   const rowPaddingLeft = 12 + level * 14;
   const dividerLeft = rowPaddingLeft + grid.displayWidth + 12;
 
@@ -455,7 +484,12 @@ function EquipmentRow({
           activeOpacity={0.8}
           disabled={!onPreview}
         >
-          <ItemGridImage imageUri={imageUri} fallbackUri={fallbackImageUri} grid={grid} />
+          <ItemGridImage
+            imageUri={imageUri}
+            fallbackUri={fallbackImageUri}
+            refreshComposed={isComposedImage}
+            grid={grid}
+          />
         </TouchableOpacity>
         <View style={styles.equipInfo}>
           <View style={styles.slotRow}>

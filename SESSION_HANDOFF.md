@@ -132,3 +132,10 @@
   - `bunx tsc --noEmit`
 - 5) 涉及文案必须补齐 `zh/en/ru`
 - 6) 涉及商人/任务/搜索规则，先核对“第 4/6/7 节”的约束再改代码
+
+## 14. API Contract Rule (Must Follow)
+- Do not guess request or response structures for any upstream API.
+- Before coding a new query or field mapping, validate it with a real request to `https://api.tarkov.dev/graphql`.
+- Cross-check the field usage against upstream implementation in `https://github.com/the-hideout/tarkov-dev`.
+- If runtime errors appear, first reproduce with a real query and capture the exact field shape, then patch code.
+- Keep this rule as a hard requirement for all future handoffs and summaries.

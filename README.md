@@ -127,3 +127,4 @@ adb reverse tcp:8081 tcp:8081
 
 ## 关键文档
 - 会话交接与决策记录：[`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md)
+- 工程开发准则（加载动画与 API 分块策略）：[`docs/ENGINEERING_GUIDELINES.md`](./docs/ENGINEERING_GUIDELINES.md)

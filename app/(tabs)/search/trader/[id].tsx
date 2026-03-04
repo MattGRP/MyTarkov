@@ -1,10 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Modal,
+  Pressable,
+  Linking,
+} from 'react-native';
 import { useLocalSearchParams, Stack, useRouter, useSegments } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { ArrowDown, ArrowUp, ArrowUpDown, Filter } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, Filter } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { localizeCategoryName, localizeTraderName } from '@/constants/i18n';
 import { useLanguage } from '@/providers/LanguageProvider';
 import { fetchTraderById } from '@/services/tarkovApi';
 import type {
@@ -14,42 +24,8 @@ import type {
   TraderOfferItemRef,
 } from '@/types/tarkov';
 import { formatCountdownToTimestamp, formatPrice } from '@/utils/helpers';
-
-const TRADER_NAME_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  fence: { zh: '黑商', ru: 'Fence' },
-  prapor: { zh: '俄商', ru: 'Prapor' },
-  therapist: { zh: '大妈', ru: 'Therapist' },
-  skier: { zh: '小蓝帽', ru: 'Skier' },
-  peacekeeper: { zh: '美商', ru: 'Peacekeeper' },
-  mechanic: { zh: '机械师', ru: 'Mechanic' },
-  ragman: { zh: '服装商', ru: 'Ragman' },
-  jaeger: { zh: '杰哥', ru: 'Jaeger' },
-  lightkeeper: { zh: '灯塔商人', ru: 'Lightkeeper' },
-  'radio station': { zh: '电台', ru: 'Radio station' },
-  'mr. kerman': { zh: 'Kerman 先生', ru: 'Mr. Kerman' },
-};
-
-const CATEGORY_TRANSLATIONS: Record<string, { zh: string; ru: string }> = {
-  'arm band': { zh: '臂章', ru: 'Повязка' },
-  'armor plate': { zh: '插板', ru: 'Бронеплита' },
-  'auxiliary mod': { zh: '辅助配件', ru: 'Доп. модуль' },
-  'cylinder magazine': { zh: '弹鼓', ru: 'Барабанный магазин' },
-  'face cover': { zh: '面罩', ru: 'Маска' },
-  flyer: { zh: '传单', ru: 'Листовка' },
-  headwear: { zh: '头盔', ru: 'Головной убор' },
-  keycard: { zh: '钥匙卡', ru: 'Ключ-карта' },
-  'mechanical key': { zh: '机械钥匙', ru: 'Механический ключ' },
-  'night vision': { zh: '夜视设备', ru: 'Ночное видение' },
-  notes: { zh: '笔记', ru: 'Записки' },
-  other: { zh: '其他', ru: 'Прочее' },
-  'radio transmitter': { zh: '无线电发射器', ru: 'Радиопередатчик' },
-  'random loot container': { zh: '随机战利品容器', ru: 'Случайный контейнер' },
-  revolver: { zh: '左轮手枪', ru: 'Револьвер' },
-  rocket: { zh: '火箭弹', ru: 'Ракета' },
-  'rocket launcher': { zh: '火箭筒', ru: 'Ракетомет' },
-  'spring driven cylinder': { zh: '发条弹鼓', ru: 'Пружинный барабан' },
-  tapes: { zh: '磁带', ru: 'Кассеты' },
-};
+import ShimmerBlock from '@/components/ShimmerBlock';
+import FullscreenSkeleton from '@/components/FullscreenSkeleton';
 
 const OFFER_SORT_OPTIONS = [
   { key: 'name', labelKey: 'searchSortName' },
@@ -60,26 +36,12 @@ type OfferSortKey = typeof OFFER_SORT_OPTIONS[number]['key'];
 type SortDirection = 'asc' | 'desc';
 type OfferTypeFilter = 'all' | 'cash' | 'barter';
 
-function localizeTraderName(name: string, normalizedName: string | null | undefined, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const normalized = (normalizedName || name).trim().toLowerCase();
-  const mapped = TRADER_NAME_TRANSLATIONS[normalized];
-  return mapped?.[language] || name;
-}
-
-function localizeUnknownText(value: string | null | undefined, unknownLabel: string): string {
+function resolveTraderDescriptionText(value: string | null | undefined): string | null {
   const text = String(value || '').trim();
-  if (!text) return unknownLabel;
+  if (!text) return null;
   const normalized = text.toLowerCase();
-  if (normalized === 'unknown' || normalized === '<unknown>') return unknownLabel;
+  if (normalized === '<unknown>' || normalized === 'unknown') return null;
   return text;
-}
-
-function localizeCategoryName(name: string, language: 'en' | 'zh' | 'ru'): string {
-  if (!name || language === 'en') return name;
-  const key = name.trim().toLowerCase();
-  const mapped = CATEGORY_TRANSLATIONS[key];
-  return mapped?.[language] || name;
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -126,9 +88,56 @@ function formatContainedLabel(entry: TraderContainedItem): string {
   return `${formatNumber(count)}x ${itemName}`;
 }
 
+const TRADER_WIKI_OVERRIDES: Record<string, string> = {
+  fence: 'https://escapefromtarkov.fandom.com/wiki/Fence',
+  prapor: 'https://escapefromtarkov.fandom.com/wiki/Prapor',
+  therapist: 'https://escapefromtarkov.fandom.com/wiki/Therapist',
+  skier: 'https://escapefromtarkov.fandom.com/wiki/Skier',
+  peacekeeper: 'https://escapefromtarkov.fandom.com/wiki/Peacekeeper',
+  mechanic: 'https://escapefromtarkov.fandom.com/wiki/Mechanic',
+  ragman: 'https://escapefromtarkov.fandom.com/wiki/Ragman',
+  jaeger: 'https://escapefromtarkov.fandom.com/wiki/Jaeger',
+  lightkeeper: 'https://escapefromtarkov.fandom.com/wiki/Lightkeeper',
+  'radio-station': 'https://escapefromtarkov.fandom.com/wiki/Radio_station',
+  ref: 'https://escapefromtarkov.fandom.com/wiki/Ref',
+  taran: 'https://escapefromtarkov.fandom.com/wiki/Taran',
+  voevoda: 'https://escapefromtarkov.fandom.com/wiki/Voevoda',
+  voecoda: 'https://escapefromtarkov.fandom.com/wiki/Voevoda',
+  'mr-kerman': 'https://escapefromtarkov.fandom.com/wiki/Mr._Kerman',
+  'btr-driver': 'https://escapefromtarkov.fandom.com/wiki/BTR_Driver',
+};
+
+function resolveTraderWikiLink(name?: string, normalizedName?: string): string {
+  const normalized = String(normalizedName || '').trim().toLowerCase();
+  if (normalized && TRADER_WIKI_OVERRIDES[normalized]) {
+    return TRADER_WIKI_OVERRIDES[normalized];
+  }
+  const rawName = String(name || '').trim();
+  if (!rawName) return '';
+  return `https://escapefromtarkov.fandom.com/wiki/${encodeURIComponent(rawName.replace(/\s+/g, '_'))}`;
+}
+
 export default function TraderDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string | string[] }>();
+  const {
+    id,
+    name,
+    normalizedName,
+    imageLink,
+    description,
+    resetTime,
+  } = useLocalSearchParams<{
+    id: string | string[];
+    name?: string | string[];
+    normalizedName?: string | string[];
+    imageLink?: string | string[];
+    description?: string | string[];
+    resetTime?: string | string[];
+  }>();
   const traderId = Array.isArray(id) ? id[0] : id;
+  const getParam = useCallback((value?: string | string[]) => {
+    if (Array.isArray(value)) return String(value[0] || '').trim();
+    return String(value || '').trim();
+  }, []);
   const { t, language } = useLanguage();
   const router = useRouter();
   const segments = useSegments();
@@ -143,15 +152,38 @@ export default function TraderDetailScreen() {
 
   const traderQuery = useQuery({
     queryKey: ['trader-detail', traderId, language],
-    queryFn: () => fetchTraderById(traderId!, language),
+    queryFn: ({ signal }) => fetchTraderById(traderId!, language, { signal }),
     enabled: !!traderId,
     staleTime: 30 * 60 * 1000,
   });
 
-  const trader = traderQuery.data;
+  const previewTrader = useMemo(() => {
+    const previewId = String(traderId || '').trim();
+    if (!previewId) return null;
+    const previewName = getParam(name) || previewId;
+    return {
+      id: previewId,
+      name: previewName,
+      normalizedName: getParam(normalizedName) || undefined,
+      imageLink: getParam(imageLink) || undefined,
+      description: getParam(description) || undefined,
+      resetTime: getParam(resetTime) || undefined,
+      levels: [],
+      cashOffers: [],
+      barters: [],
+    };
+  }, [description, getParam, imageLink, name, normalizedName, resetTime, traderId]);
+
+  const trader = traderQuery.data ?? previewTrader;
+  const isHydratingDetails = !traderQuery.data && traderQuery.isFetching && !!previewTrader;
   const title = trader
     ? localizeTraderName(trader.name, trader.normalizedName, language)
     : t.traderDetailsTitle;
+  const traderDescriptionText = resolveTraderDescriptionText(trader?.description) || t.searchUnknown;
+  const traderWikiLink = useMemo(
+    () => resolveTraderWikiLink(trader?.name, trader?.normalizedName),
+    [trader?.name, trader?.normalizedName],
+  );
 
   const sortedLevels = useMemo(() => {
     const levels = trader?.levels ?? [];
@@ -341,12 +373,21 @@ export default function TraderDetailScreen() {
     setCategoryModalOpen(false);
   }, [draftCategories]);
 
+  const openWiki = useCallback(async () => {
+    if (!traderWikiLink) return;
+    try {
+      await Linking.openURL(traderWikiLink);
+    } catch {
+      // ignore open-url failure
+    }
+  }, [traderWikiLink]);
+
   if (traderQuery.isLoading && !trader) {
     return (
-      <View style={styles.centerWrap}>
+      <>
         <Stack.Screen options={{ title: t.traderDetailsTitle }} />
-        <ActivityIndicator size="large" color={Colors.gold} />
-      </View>
+        <FullscreenSkeleton message={t.searchTraderTitle} />
+      </>
     );
   }
 
@@ -378,17 +419,36 @@ export default function TraderDetailScreen() {
             <Text style={styles.heroSub}>
               {t.traderResetTime}: {formatCountdownToTimestamp(trader.resetTime, nowTick)}
             </Text>
+            {traderWikiLink ? (
+              <TouchableOpacity style={styles.wikiButton} activeOpacity={0.75} onPress={openWiki}>
+                <ExternalLink size={14} color={Colors.gold} />
+                <Text style={styles.wikiButtonText}>{t.taskOpenWiki}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.traderDescription}</Text>
-          <Text style={styles.sectionText}>{localizeUnknownText(trader.description, t.searchUnknown)}</Text>
+          {isHydratingDetails ? (
+            <View style={styles.skeletonList}>
+              <ShimmerBlock height={14} />
+              <ShimmerBlock height={14} width="92%" />
+              <ShimmerBlock height={14} width="78%" />
+            </View>
+          ) : (
+            <Text style={styles.sectionText}>{traderDescriptionText}</Text>
+          )}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.traderLevels}</Text>
-          {sortedLevels.length === 0 ? (
+          {isHydratingDetails ? (
+            <View style={styles.skeletonList}>
+              <ShimmerBlock height={30} borderRadius={999} width="42%" />
+              <ShimmerBlock height={92} borderRadius={10} />
+            </View>
+          ) : sortedLevels.length === 0 ? (
             <Text style={styles.sectionText}>-</Text>
           ) : (
             <>
@@ -437,7 +497,16 @@ export default function TraderDetailScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.traderSellItems}</Text>
-          <View style={styles.offerToolsRow}>
+          {isHydratingDetails ? (
+            <View style={styles.skeletonList}>
+              <ShimmerBlock height={34} borderRadius={10} />
+              <ShimmerBlock height={64} borderRadius={12} />
+              <ShimmerBlock height={64} borderRadius={12} />
+              <ShimmerBlock height={64} borderRadius={12} />
+            </View>
+          ) : (
+            <>
+              <View style={styles.offerToolsRow}>
             <View style={styles.sortGroup}>
               <ArrowUpDown size={14} color={Colors.textSecondary} />
               <View style={styles.sortOptions}>
@@ -500,7 +569,7 @@ export default function TraderDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {showCashOffers ? (
+              {showCashOffers ? (
             <View style={styles.offerGroup}>
               <Text style={styles.offerGroupTitle}>{t.traderCashOffers}</Text>
               {cashOffers.length === 0 ? (
@@ -545,9 +614,9 @@ export default function TraderDetailScreen() {
                 ))
               )}
             </View>
-          ) : null}
+              ) : null}
 
-          {showBarterOffers ? (
+              {showBarterOffers ? (
             <View style={styles.offerGroup}>
               <Text style={styles.offerGroupTitle}>{t.traderBarterOffers}</Text>
               {barterRows.length === 0 ? (
@@ -621,7 +690,9 @@ export default function TraderDetailScreen() {
                 ))
               )}
             </View>
-          ) : null}
+              ) : null}
+            </>
+          )}
         </View>
       </ScrollView>
 
@@ -746,6 +817,9 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
+  skeletonList: {
+    gap: 8,
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700' as const,
@@ -757,6 +831,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: Colors.textSecondary,
+  },
+  wikiButton: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.goldDim,
+    backgroundColor: 'rgba(217,191,115,0.16)',
+  },
+  wikiButtonText: {
+    color: Colors.gold,
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   levelTabsRow: {
     gap: 8,

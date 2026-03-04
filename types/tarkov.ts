@@ -146,6 +146,16 @@ export interface ItemSearchResult {
   category?: { name: string };
 }
 
+export interface ItemCategoryRef {
+  name: string;
+  normalizedName?: string;
+}
+
+export interface ItemCategoryNode extends ItemCategoryRef {
+  parent?: ItemCategoryRef | null;
+  children?: ItemCategoryRef[];
+}
+
 export interface ItemVendor {
   id?: string;
   name: string;
@@ -330,6 +340,85 @@ export interface TraderDetail {
   levels?: TraderLevel[];
   cashOffers?: TraderCashOffer[];
   barters?: TraderBarterOffer[];
+}
+
+export interface BossHealthPart {
+  id: string;
+  bodyPart: string;
+  max: number;
+}
+
+export interface BossEquipmentAttribute {
+  name: string;
+  value: string;
+}
+
+export interface BossContainedItem extends TraderContainedItem {
+  attributes?: BossEquipmentAttribute[] | null;
+}
+
+export interface BossLootItem extends TraderOfferItemRef {
+  count?: number;
+}
+
+export interface BossSpawnLocation {
+  spawnKey: string;
+  name: string;
+  chance: number;
+}
+
+export interface BossEscortAmount {
+  count: number;
+  chance: number;
+}
+
+export interface BossEscort {
+  id?: string;
+  name: string;
+  normalizedName?: string;
+  imagePortraitLink?: string | null;
+  imagePosterLink?: string | null;
+  amounts?: BossEscortAmount[];
+  maps?: TaskMapRef[];
+}
+
+export interface BossSpawnEntry {
+  spawnChance?: number | null;
+  spawnLocations?: BossSpawnLocation[];
+  escorts?: BossEscort[];
+  spawnTime?: number | null;
+  spawnTimeRandom?: boolean | null;
+  spawnTrigger?: string | null;
+  switchId?: string | null;
+}
+
+export interface BossMapSpawn {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  spawns: BossSpawnEntry[];
+}
+
+export interface BossEquipmentSet {
+  id: string;
+  items: BossContainedItem[];
+}
+
+export interface BossDetail {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  imagePortraitLink?: string | null;
+  imagePosterLink?: string | null;
+  description?: string | null;
+  behavior?: string | null;
+  wikiLink?: string | null;
+  health?: BossHealthPart[] | null;
+  equipment?: BossContainedItem[];
+  equipmentSets?: BossEquipmentSet[];
+  items?: BossLootItem[];
+  maps?: BossMapSpawn[];
+  followers?: BossEscort[];
 }
 
 export interface TaskMapRef {

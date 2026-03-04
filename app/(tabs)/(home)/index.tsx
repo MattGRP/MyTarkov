@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
   Animated,
   Easing,
@@ -20,6 +19,7 @@ import { useLanguage } from '@/providers/LanguageProvider';
 import { clearPlayerProfileCache, fetchPlayerProfile } from '@/services/tarkovApi';
 import PlayerProfileView from '@/components/PlayerProfileView';
 import AccountBindingPanel from '@/components/AccountBindingPanel';
+import PlayerProfileSkeleton from '@/components/PlayerProfileSkeleton';
 
 export default function MyProfileScreen() {
   const { playerAccountId } = useAuth();
@@ -55,12 +55,12 @@ export default function MyProfileScreen() {
 
   const profileQuery = useQuery({
     queryKey: ['profile', playerAccountId],
-    queryFn: () => fetchPlayerProfile(playerAccountId!),
+    queryFn: ({ signal }) => fetchPlayerProfile(playerAccountId!, { signal }),
     enabled: !!playerAccountId,
-    staleTime: 0,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: true,
-    gcTime: 0,
+    staleTime: 2 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 10 * 60 * 1000,
   });
 
   const handleRefresh = useCallback(async () => {
@@ -101,10 +101,7 @@ export default function MyProfileScreen() {
 
   if (profileQuery.isLoading && !profileQuery.data) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.loadingText}>{t.loadingProfile}</Text>
-      </View>
+      <PlayerProfileSkeleton showCompactHeaderPlaceholder />
     );
   }
 
@@ -122,11 +119,7 @@ export default function MyProfileScreen() {
   }
 
   if (!profileQuery.data) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.gold} />
-      </View>
-    );
+    return <PlayerProfileSkeleton showCompactHeaderPlaceholder />;
   }
 
   return (

@@ -5,10 +5,9 @@ import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { LanguageProvider } from '@/providers/LanguageProvider';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import Colors from '@/constants/colors';
 import PlayerSearchTokenBootstrap from '@/components/PlayerSearchTokenBootstrap';
 import TasksBootstrap from '@/components/TasksBootstrap';
+import FullscreenSkeleton from '@/components/FullscreenSkeleton';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -32,9 +31,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={Colors.gold} />
-      </View>
+      <FullscreenSkeleton />
     );
   }
 
@@ -70,12 +67,3 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
