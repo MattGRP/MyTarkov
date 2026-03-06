@@ -14,6 +14,7 @@ import {
 import { Globe } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors, { getModeAccentTheme } from '@/constants/colors';
+import { getDockReservedInset } from '@/constants/layout';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
@@ -137,7 +138,7 @@ export default function SettingsScreen() {
           styles.content,
           {
             paddingTop: headerHeight + contentTopGap,
-            paddingBottom: Math.max(insets.bottom + 28, 36),
+            paddingBottom: Math.max(getDockReservedInset(insets.bottom) + 12, 96),
           },
         ]}
         showsVerticalScrollIndicator={false}

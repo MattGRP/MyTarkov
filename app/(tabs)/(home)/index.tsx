@@ -14,6 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, AlertTriangle } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
+import { getDockReservedInset } from '@/constants/layout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
@@ -127,7 +128,7 @@ export default function MyProfileScreen() {
             styles.unboundContent,
             {
               paddingTop: Math.max(insets.top + 16, 24),
-              paddingBottom: Math.max(insets.bottom + 24, 36),
+              paddingBottom: Math.max(getDockReservedInset(insets.bottom) + 12, 96),
             },
           ]}
           keyboardShouldPersistTaps="handled"

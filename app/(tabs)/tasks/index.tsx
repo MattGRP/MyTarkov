@@ -17,6 +17,7 @@ import { Image } from 'expo-image';
 import { ChevronRight, Search, Filter } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors, { alphaBlack, alphaWhite, getModeAccentTheme } from '@/constants/colors';
+import { getDockReservedInset } from '@/constants/layout';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
@@ -220,7 +221,7 @@ export default function TasksScreen() {
   }, [filteredTasks]);
 
   const listTopInset = headerHeight + 8;
-  const listBottomInset = Math.max(insets.bottom + 24, 30);
+  const listBottomInset = Math.max(getDockReservedInset(insets.bottom) + 12, 96);
   const onHeaderLayout = useCallback((event: LayoutChangeEvent) => {
     const next = Math.round(event.nativeEvent.layout.height);
     if (next > 0 && Math.abs(next - headerHeight) > 1) {

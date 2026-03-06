@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Keyboard, Modal, Pressable, ScrollView, Platform, type LayoutChangeEvent } from 'react-native';
-import { Search, X, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Filter, Package, User, ClipboardList, Store, Skull } from 'lucide-react-native';
+import { Search, X, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Filter, Package, User, ClipboardList, Store, Skull, Map as MapIcon } from 'lucide-react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -8,11 +8,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors, { alphaBlack, alphaWhite, getModeAccentTheme } from '@/constants/colors';
+import { getDockReservedInset } from '@/constants/layout';
 import { localizeBossName, localizeCategoryName, localizeTraderName } from '@/constants/i18n';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 import {
   fetchItemCategories,
+  fetchMaps,
   fetchTaskSummaries,
   fetchTraders,
   fetchBosses,
@@ -22,8 +24,9 @@ import {
   searchItems,
   searchPlayers,
 } from '@/services/tarkovApi';
-import { BossDetail, ItemSearchResult, SearchResult, TaskDetail, TraderDetail } from '@/types/tarkov';
+import { BossDetail, ItemSearchResult, SearchResult, TaskDetail, TraderDetail, TarkovMapSummary } from '@/types/tarkov';
 import { formatCountdownToTimestamp, formatPrice } from '@/utils/helpers';
+import { getMapRaidTimePair } from '@/utils/tarkovTime';
 import FullScreenImageModal from '@/components/FullScreenImageModal';
 import PageHeader, { getPageHeaderEstimatedHeight } from '@/components/PageHeader';
 import TurnstileTokenModal from '@/components/TurnstileTokenModal';
@@ -39,11 +42,11 @@ type SortKey = typeof SORT_OPTIONS[number]['key'];
 
 type SortDirection = 'asc' | 'desc';
 
-type SearchMode = 'item' | 'player' | 'task' | 'trader' | 'boss';
+type SearchMode = 'map' | 'item' | 'player' | 'task' | 'trader' | 'boss';
 const SEARCH_LIST_PAGE_SIZE = 40;
 const RECENT_PLAYERS_STORAGE_KEY = 'search_recent_players';
 const RECENT_PLAYERS_MAX = 10;
-const SEARCH_MODE_ORDER: SearchMode[] = ['task', 'boss', 'trader', 'item', 'player'];
+const SEARCH_MODE_ORDER: SearchMode[] = ['map', 'task', 'boss', 'trader', 'item', 'player'];
 
 function getItemPrimaryPrice(item: ItemSearchResult): number {
   return item.avg24hPrice ?? item.lastLowPrice ?? item.basePrice ?? 0;
@@ -105,6 +108,7 @@ export default function SearchScreen() {
   const isFocused = useIsFocused();
   const [headerHeight, setHeaderHeight] = useState<number>(() => getPageHeaderEstimatedHeight(insets.top, true));
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const [mapClockTick, setMapClockTick] = useState<number>(() => Date.now());
 
   const [searchMode, setSearchMode] = useState<SearchMode>(SEARCH_MODE_ORDER[0]);
   const [searchText, setSearchText] = useState<string>('');
@@ -133,6 +137,7 @@ export default function SearchScreen() {
   const [taskFactionModalOpen, setTaskFactionModalOpen] = useState(false);
   const [only3x4Required, setOnly3x4Required] = useState(false);
   const [onlyLightkeeperRequired, setOnlyLightkeeperRequired] = useState(false);
+  const [mapVisibleCount, setMapVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
   const [taskVisibleCount, setTaskVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
   const [traderVisibleCount, setTraderVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
   const [bossVisibleCount, setBossVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
@@ -239,6 +244,17 @@ export default function SearchScreen() {
       setPlayerHasSearched(true);
     },
   });
+
+  const mapsQuery = useQuery({
+    queryKey: ['maps', language, gameMode],
+    queryFn: ({ signal }) => fetchMaps(language, { signal, gameMode }),
+    enabled: isFocused && searchMode === 'map',
+    staleTime: 30 * 60 * 1000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchOnReconnect: 'always',
+  });
+  const allMaps = useMemo(() => mapsQuery.data ?? [], [mapsQuery.data]);
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', language, gameMode],
@@ -394,6 +410,30 @@ export default function SearchScreen() {
       });
   }, [allTasks, t.taskAnyMap]);
 
+  const filteredMapResults = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    const sortByName = (a: TarkovMapSummary, b: TarkovMapSummary) => (
+      String(a.name || '').localeCompare(String(b.name || ''))
+    );
+    if (!query) {
+      return [...allMaps].sort(sortByName);
+    }
+    return allMaps
+      .filter((mapItem) => {
+        const name = String(mapItem.name || '').toLowerCase();
+        const normalizedName = String(mapItem.normalizedName || '').toLowerCase();
+        const description = String(mapItem.description || '').toLowerCase();
+        const players = String(mapItem.players || '').toLowerCase();
+        return (
+          name.includes(query)
+          || normalizedName.includes(query)
+          || description.includes(query)
+          || players.includes(query)
+        );
+      })
+      .sort(sortByName);
+  }, [allMaps, searchText]);
+
   const selectedTaskTraderSet = useMemo(() => new Set(selectedTaskTraders), [selectedTaskTraders]);
   const selectedTaskLevelSet = useMemo(() => new Set(selectedTaskLevels), [selectedTaskLevels]);
   const selectedTaskMapSet = useMemo(() => new Set(selectedTaskMaps), [selectedTaskMaps]);
@@ -506,6 +546,14 @@ export default function SearchScreen() {
   }, []);
 
   useEffect(() => {
+    if (!isFocused || searchMode !== 'map') return;
+    const timer = setInterval(() => {
+      setMapClockTick(Date.now());
+    }, 50);
+    return () => clearInterval(timer);
+  }, [isFocused, searchMode]);
+
+  useEffect(() => {
     return () => {
       itemSearchAbortRef.current?.abort();
       playerSearchAbortRef.current?.abort();
@@ -579,6 +627,10 @@ export default function SearchScreen() {
     () => filteredItemResults.slice(0, itemVisibleCount),
     [filteredItemResults, itemVisibleCount],
   );
+  const visibleMapResults = useMemo(
+    () => filteredMapResults.slice(0, mapVisibleCount),
+    [filteredMapResults, mapVisibleCount],
+  );
   const visiblePlayerResults = useMemo(
     () => playerResults.slice(0, playerVisibleCount),
     [playerResults, playerVisibleCount],
@@ -601,6 +653,11 @@ export default function SearchScreen() {
     if (itemVisibleCount >= filteredItemResults.length) return;
     setItemVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredItemResults.length));
   }, [filteredItemResults.length, isItemPending, itemVisibleCount]);
+  const handleLoadMoreMaps = useCallback(() => {
+    if (mapsQuery.isLoading) return;
+    if (mapVisibleCount >= filteredMapResults.length) return;
+    setMapVisibleCount((prev) => Math.min(prev + SEARCH_LIST_PAGE_SIZE, filteredMapResults.length));
+  }, [filteredMapResults.length, mapVisibleCount, mapsQuery.isLoading]);
   const handleLoadMorePlayers = useCallback(() => {
     if (isPlayerPending) return;
     if (playerVisibleCount >= playerResults.length) return;
@@ -658,6 +715,9 @@ export default function SearchScreen() {
     setItemVisibleCount(SEARCH_LIST_PAGE_SIZE);
   }, [filteredItemResults]);
   useEffect(() => {
+    setMapVisibleCount(SEARCH_LIST_PAGE_SIZE);
+  }, [filteredMapResults]);
+  useEffect(() => {
     setPlayerVisibleCount(SEARCH_LIST_PAGE_SIZE);
   }, [playerResults]);
   useEffect(() => {
@@ -697,6 +757,28 @@ export default function SearchScreen() {
         wikiLink: item.wikiLink || '',
       },
     });
+  }, [router]);
+
+  const handleOpenMap = useCallback((mapItem: TarkovMapSummary) => {
+    const mapId = String(mapItem.id || mapItem.normalizedName || mapItem.name || '').trim();
+    if (!mapId) return;
+    router.push({
+      pathname: '/(tabs)/search/map/[id]',
+      params: {
+        id: mapId,
+        name: mapItem.name || '',
+        normalizedName: mapItem.normalizedName || '',
+        wiki: mapItem.wiki || '',
+        description: mapItem.description || '',
+        players: mapItem.players || '',
+        raidDuration: String(mapItem.raidDuration ?? ''),
+        imageLink: mapItem.imageLink || '',
+        imageFallbackLinks: JSON.stringify(mapItem.imageFallbackLinks ?? []),
+        interactiveImageLink: mapItem.interactiveImageLink || '',
+        interactiveFallbackLinks: JSON.stringify(mapItem.interactiveFallbackLinks ?? []),
+        mapPageLink: mapItem.mapPageLink || '',
+      },
+    } as never);
   }, [router]);
 
   const saveRecentPlayer = useCallback((entry: SearchResult) => {
@@ -782,7 +864,7 @@ export default function SearchScreen() {
 
   const handleSearch = useCallback(() => {
     const query = searchText.trim();
-    if (!query && searchMode !== 'task' && searchMode !== 'trader' && searchMode !== 'boss') return;
+    if (!query && searchMode !== 'map' && searchMode !== 'task' && searchMode !== 'trader' && searchMode !== 'boss') return;
     const isAccountIdQuery = /^\d+$/.test(query);
 
     Keyboard.dismiss();
@@ -799,6 +881,13 @@ export default function SearchScreen() {
       itemSearchAbortRef.current?.abort();
       playerSearchAbortRef.current?.abort();
       void tasksQuery.refetch();
+      return;
+    }
+
+    if (searchMode === 'map') {
+      itemSearchAbortRef.current?.abort();
+      playerSearchAbortRef.current?.abort();
+      void mapsQuery.refetch();
       return;
     }
 
@@ -844,11 +933,16 @@ export default function SearchScreen() {
     t.searchAndroidAccountOnlyError,
     t.searchPlayerNameTooShort,
     bossesQuery,
+    mapsQuery,
     tasksQuery,
     tradersQuery,
   ]);
 
   const handleRefetchActiveMode = useCallback(() => {
+    if (searchMode === 'map') {
+      void mapsQuery.refetch();
+      return;
+    }
     if (searchMode === 'task') {
       void tasksQuery.refetch();
       return;
@@ -860,7 +954,7 @@ export default function SearchScreen() {
     if (searchMode === 'boss') {
       void bossesQuery.refetch();
     }
-  }, [bossesQuery, searchMode, tasksQuery, tradersQuery]);
+  }, [bossesQuery, mapsQuery, searchMode, tasksQuery, tradersQuery]);
 
   const handleClear = useCallback(() => {
     setSearchText('');
@@ -875,6 +969,10 @@ export default function SearchScreen() {
     }
 
     if (searchMode === 'task') {
+      return;
+    }
+
+    if (searchMode === 'map') {
       return;
     }
 
@@ -1163,6 +1261,54 @@ export default function SearchScreen() {
     );
   }, [handleOpenItem, language, t.searchSortPrice, t.searchUnknown]);
 
+  const renderMapResult = useCallback(({ item }: { item: TarkovMapSummary }) => {
+    const playersText = localizeUnknownText(item.players, t.searchUnknown);
+    const raidDurationText = Number.isFinite(item.raidDuration)
+      ? `${Math.max(0, Math.floor(Number(item.raidDuration)))} ${t.searchMapMinutesUnit}`
+      : t.searchUnknown;
+    const raidTimes = getMapRaidTimePair(item.normalizedName, mapClockTick);
+    const raidStartTimesText = raidTimes ? `${raidTimes[0]} / ${raidTimes[1]}` : t.searchUnknown;
+    const descriptionText = localizeUnknownText(item.description, t.searchUnknown);
+    return (
+      <View style={styles.resultRowWrap}>
+        <TouchableOpacity
+          style={styles.traderRow}
+          onPress={() => handleOpenMap(item)}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.playerAvatar, themeStyles.playerAvatar]}>
+            <MapIcon size={20} color={Colors.gold} />
+          </View>
+          <View style={styles.traderInfo}>
+            <Text style={styles.traderName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {t.searchMapPlayers}: {playersText}
+            </Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {t.searchMapRaidTimes}: {raidStartTimesText}
+            </Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {t.searchMapRaidDuration}: {raidDurationText}
+            </Text>
+            <Text style={styles.traderMeta} numberOfLines={1}>
+              {descriptionText}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    );
+  }, [
+    handleOpenMap,
+    t.searchMapMinutesUnit,
+    t.searchMapPlayers,
+    t.searchMapRaidTimes,
+    t.searchMapRaidDuration,
+    t.searchUnknown,
+    themeStyles.playerAvatar,
+    mapClockTick,
+  ]);
+
   const renderPlayerRow = useCallback((item: SearchResult, metaText: string) => (
     <TouchableOpacity
       style={styles.playerRow}
@@ -1376,6 +1522,27 @@ export default function SearchScreen() {
     </View>
   ), [themeStyles.playerAvatar]);
 
+  const renderMapSkeletonRows = useCallback((count = 6) => (
+    <View style={styles.skeletonListWrap}>
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={`map-skeleton-${index}`} style={styles.resultRowWrap}>
+          <View style={styles.traderRow}>
+            <View style={[styles.playerAvatar, themeStyles.playerAvatar]}>
+              <ShimmerBlock width={20} height={20} borderRadius={10} />
+            </View>
+            <View style={styles.traderInfo}>
+              <ShimmerBlock width="52%" height={15} />
+              <ShimmerBlock width="62%" height={12} />
+              <ShimmerBlock width="72%" height={12} />
+              <ShimmerBlock width="80%" height={12} />
+            </View>
+            <ShimmerBlock width={16} height={16} borderRadius={8} />
+          </View>
+        </View>
+      ))}
+    </View>
+  ), [themeStyles.playerAvatar]);
+
   const renderTraderSkeletonRows = useCallback((count = 6) => (
     <View style={styles.skeletonListWrap}>
       {Array.from({ length: count }).map((_, index) => (
@@ -1429,7 +1596,9 @@ export default function SearchScreen() {
     </View>
   ), []);
 
-  const activeErrorRaw = searchMode === 'item'
+  const activeErrorRaw = searchMode === 'map'
+    ? (mapsQuery.isError ? (mapsQuery.error as Error)?.message : '')
+    : searchMode === 'item'
     ? (isItemError && !isAbortRequestError(itemError) ? (itemError as Error)?.message : '')
     : searchMode === 'player'
       ? (
@@ -1459,6 +1628,7 @@ export default function SearchScreen() {
     && !playerHasSearched;
 
   const modeConfig = useMemo(() => ({
+    map: { label: t.searchModeMap, Icon: MapIcon },
     task: { label: t.searchModeTask, Icon: ClipboardList },
     boss: { label: t.searchModeBoss, Icon: Skull },
     trader: { label: t.searchModeTrader, Icon: Store },
@@ -1467,6 +1637,7 @@ export default function SearchScreen() {
   }), [
     t.searchModeBoss,
     t.searchModeItem,
+    t.searchModeMap,
     t.searchModePlayer,
     t.searchModeTask,
     t.searchModeTrader,
@@ -1481,7 +1652,9 @@ export default function SearchScreen() {
     ? t.searchPlayerEmptySubAccountId
     : t.searchPlayerEmptySubName;
 
-  const headerTitle = searchMode === 'item'
+  const headerTitle = searchMode === 'map'
+    ? t.searchMapTitle
+    : searchMode === 'item'
     ? t.searchHeaderTitle
     : searchMode === 'player'
       ? t.searchPlayerTitle
@@ -1491,7 +1664,7 @@ export default function SearchScreen() {
           ? t.searchTraderTitle
           : t.searchBossTitle;
   const listTopInset = headerHeight + 10;
-  const listBottomInset = Math.max(insets.bottom + 24, 30);
+  const listBottomInset = Math.max(getDockReservedInset(insets.bottom) + 12, 96);
   const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
     const next = Math.round(event.nativeEvent.layout.height);
     if (next > 0 && Math.abs(next - headerHeight) > 1) {
@@ -1534,7 +1707,9 @@ export default function SearchScreen() {
             <TextInput
               style={styles.searchInput}
               placeholder={
-                searchMode === 'item'
+                searchMode === 'map'
+                  ? t.searchMapPlaceholder
+                  : searchMode === 'item'
                   ? t.searchPlaceholder
                   : searchMode === 'player'
                     ? playerPlaceholder
@@ -1575,7 +1750,7 @@ export default function SearchScreen() {
             {activeError}
           </Text>
         )}
-        {!inputError && !!activeError && (searchMode === 'task' || searchMode === 'trader' || searchMode === 'boss') && (
+        {!inputError && !!activeError && (searchMode === 'map' || searchMode === 'task' || searchMode === 'trader' || searchMode === 'boss') && (
           <TouchableOpacity style={styles.inlineRetryButton} onPress={handleRefetchActiveMode} activeOpacity={0.8}>
             <Text style={styles.inlineRetryText}>{t.retry}</Text>
           </TouchableOpacity>
@@ -1751,7 +1926,29 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: Colors.background }]}>
-      {searchMode === 'item' ? (
+      {searchMode === 'map' ? (
+        <FlatList
+          data={visibleMapResults}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMapResult}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMoreMaps}
+          onEndReachedThreshold={0.35}
+          ListHeaderComponent={listHeaderContent}
+          ListEmptyComponent={
+            mapsQuery.isLoading ? renderMapSkeletonRows() : (
+              filteredMapResults.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{t.searchNoMaps}</Text>
+                  <Text style={styles.emptySubtitle}>{t.searchNoMapsSub}</Text>
+                </View>
+              ) : null
+            )
+          }
+          contentContainerStyle={[styles.listContent, { paddingTop: listTopInset, paddingBottom: listBottomInset }]}
+        />
+      ) : searchMode === 'item' ? (
         <FlatList
           data={visibleItemResults}
           keyExtractor={(item) => item.id}

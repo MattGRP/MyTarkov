@@ -22,6 +22,7 @@ export default function SearchLayout() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="item-types" options={{ headerShown: false, gestureEnabled: true }} />
       <Stack.Screen name="player" options={{ title: t.playerProfile }} />
+      <Stack.Screen name="map/[id]" options={{ title: t.mapDetailsTitle }} />
       <Stack.Screen name="item/[id]" options={{ title: t.itemDetailsTitle }} />
       <Stack.Screen name="task/[id]" options={{ title: t.taskDetailsTitle }} />
       <Stack.Screen name="trader/[id]" options={{ title: t.traderDetailsTitle }} />

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StackActions, useIsFocused, useNavigation } from '@react-navigation/native';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from 'lucide-react-native';
 import Colors, { alphaWhite, getModeAccentTheme } from '@/constants/colors';
+import { getDockReservedInset } from '@/constants/layout';
 import { localizeCategoryName } from '@/constants/i18n';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
@@ -530,7 +531,7 @@ export default function ItemTypesScreen() {
   const activeError = categoryError || itemError;
 
   const listTopInset = headerHeight + 10;
-  const listBottomInset = Math.max(insets.bottom + 24, 30);
+  const listBottomInset = Math.max(getDockReservedInset(insets.bottom) + 12, 96);
 
   const rootCrumbLabel = `${t.searchFilterAll}${t.searchFilterType}`;
 

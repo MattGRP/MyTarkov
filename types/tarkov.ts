@@ -342,6 +342,126 @@ export interface TraderDetail {
   barters?: TraderBarterOffer[];
 }
 
+export interface TarkovMapSummary {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  wiki?: string | null;
+  description?: string | null;
+  players?: string | null;
+  raidDuration?: number | null;
+  raidStartTimes?: string[] | null;
+  imageLink?: string | null;
+  imageFallbackLinks?: string[] | null;
+  interactiveImageLink?: string | null;
+  interactiveFallbackLinks?: string[] | null;
+  mapPageLink?: string | null;
+  legendStats?: TarkovMapLegendStats | null;
+  mapConfig?: TarkovMapInteractiveConfig | null;
+  extracts?: TarkovMapExtract[] | null;
+  transits?: TarkovMapTransit[] | null;
+  spawns?: TarkovMapSpawn[] | null;
+  bosses?: TarkovMapBossSpawn[] | null;
+  lootContainers?: TarkovMapLootContainer[] | null;
+  switches?: TarkovMapSwitch[] | null;
+  hazards?: TarkovMapHazard[] | null;
+  artilleryZones?: TarkovMapArtilleryZone[] | null;
+}
+
+export interface TarkovMapLegendStats {
+  extracts: number;
+  transits: number;
+  spawns: number;
+  bosses: number;
+  lootContainers: number;
+  switches: number;
+  hazards: number;
+}
+
+export interface TarkovMapPosition {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface TarkovMapInteractiveConfig {
+  key: string;
+  minZoom?: number | null;
+  maxZoom?: number | null;
+  transform?: number[] | null;
+  coordinateRotation?: number | null;
+  bounds?: number[][] | null;
+  svgBounds?: number[][] | null;
+  svgPath?: string | null;
+  tilePath?: string | null;
+}
+
+export interface TarkovMapExtract {
+  id?: string | null;
+  name?: string | null;
+  faction?: string | null;
+  position?: TarkovMapPosition | null;
+  top?: number | null;
+  bottom?: number | null;
+}
+
+export interface TarkovMapTransit {
+  id?: string | null;
+  description?: string | null;
+  position?: TarkovMapPosition | null;
+  top?: number | null;
+  bottom?: number | null;
+}
+
+export interface TarkovMapSpawn {
+  zoneName?: string | null;
+  sides?: string[] | null;
+  categories?: string[] | null;
+  position?: TarkovMapPosition | null;
+}
+
+export interface TarkovMapBossSpawnLocation {
+  spawnKey?: string | null;
+  name?: string | null;
+  chance?: number | null;
+}
+
+export interface TarkovMapBossSpawn {
+  name?: string | null;
+  normalizedName?: string | null;
+  spawnChance?: number | null;
+  spawnLocations?: TarkovMapBossSpawnLocation[] | null;
+}
+
+export interface TarkovMapLootContainer {
+  lootContainer?: {
+    id?: string | null;
+    name?: string | null;
+    normalizedName?: string | null;
+  } | null;
+  position?: TarkovMapPosition | null;
+}
+
+export interface TarkovMapSwitch {
+  id?: string | null;
+  name?: string | null;
+  position?: TarkovMapPosition | null;
+}
+
+export interface TarkovMapHazard {
+  hazardType?: string | null;
+  name?: string | null;
+  position?: TarkovMapPosition | null;
+  top?: number | null;
+  bottom?: number | null;
+}
+
+export interface TarkovMapArtilleryZone {
+  position?: TarkovMapPosition | null;
+  top?: number | null;
+  bottom?: number | null;
+}
+
 export interface BossHealthPart {
   id: string;
   bodyPart: string;

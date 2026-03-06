@@ -12,8 +12,18 @@ import {
   ItemDetail,
   ItemCategoryNode,
   ItemSearchResult,
+  TarkovMapArtilleryZone,
+  TarkovMapBossSpawn,
+  TarkovMapExtract,
+  TarkovMapHazard,
+  TarkovMapInteractiveConfig,
+  TarkovMapLootContainer,
+  TarkovMapSpawn,
   PlayerProfile,
   SearchResult,
+  TarkovMapSwitch,
+  TarkovMapSummary,
+  TarkovMapTransit,
   TaskDetail,
   TraderDetail,
   getItemImageURL,
@@ -29,6 +39,7 @@ const ITEM_META_BASE_URL = 'https://assets.tarkov.dev';
 const PLAYER_SEARCH_TOKEN_KEY = 'tarkov_player_search_token';
 const PLAYER_SEARCH_TOKEN_UPDATED_AT_KEY = 'tarkov_player_search_token_updated_at';
 const PLAYER_PROFILE_PERSIST_KEY_PREFIX = 'tarkov_profile_cache';
+const MAPS_PERSIST_KEY_PREFIX = 'tarkov_maps_cache';
 const TURNSTILE_ERROR_CODE = 'TURNSTILE_REQUIRED';
 const PLAYER_SEARCH_CACHE_TTL_MS = 15 * 60 * 1000;
 const PLAYER_SEARCH_CACHE_LIMIT = 120;
@@ -2822,6 +2833,833 @@ export async function fetchTraders(
     if (chunk.length < pageSize) break;
   }
   return rows;
+}
+
+// Follows tarkov.dev source map keys (src/data/maps.json) for 2D map pages/images.
+const MAP_2D_KEY_BY_NORMALIZED_NAME: Record<string, string> = {
+  'streets-of-tarkov': 'streets-2d',
+  'ground-zero': 'ground-zero-2d',
+  customs: 'customs-2d',
+  factory: 'factory-2d',
+  interchange: 'interchange-2d',
+  'the-lab': 'labs-2d',
+  'the-labyrinth': 'labyrinth-2d',
+  lighthouse: 'lighthouse-2d',
+  reserve: 'reserve-2d',
+  shoreline: 'shoreline-2d',
+  terminal: 'terminal-2d',
+  woods: 'woods-2d',
+};
+
+const MAP_INTERACTIVE_KEY_BY_NORMALIZED_NAME: Record<string, string> = {
+  'streets-of-tarkov': 'streets-of-tarkov',
+  'ground-zero': 'ground-zero',
+  customs: 'customs',
+  factory: 'factory',
+  interchange: 'interchange',
+  'the-lab': 'labs',
+  'the-labyrinth': 'labyrinth',
+  lighthouse: 'lighthouse',
+  reserve: 'reserve',
+  shoreline: 'shoreline',
+  terminal: 'terminal',
+  woods: 'woods',
+};
+
+type MapInteractiveResource = {
+  svgPath?: string;
+  tilePath?: string;
+};
+
+const MAP_INTERACTIVE_RESOURCE_BY_NORMALIZED_NAME: Record<string, MapInteractiveResource> = {
+  'streets-of-tarkov': {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/StreetsOfTarkov.svg',
+  },
+  'ground-zero': {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/GroundZero.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/groundzero/main_summer/{z}/{x}/{y}.png',
+  },
+  customs: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Customs.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/customs_0.16/main/{z}/{x}/{y}.png',
+  },
+  factory: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Factory.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/factory/main/{z}/{x}/{y}.png',
+  },
+  interchange: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Interchange.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/interchange/main/{z}/{x}/{y}.png',
+  },
+  'the-lab': {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Labs.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/labs_v4/1st/{z}/{x}/{y}.png',
+  },
+  'the-labyrinth': {
+    tilePath: 'https://assets.tarkov.dev/maps/labyrinth/main/{z}/{x}/{y}.png',
+  },
+  lighthouse: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Lighthouse.svg',
+  },
+  reserve: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Reserve.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/reserve/main/{z}/{x}/{y}.png',
+  },
+  shoreline: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Shoreline.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/shoreline/main_summer/{z}/{x}/{y}.png',
+  },
+  terminal: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Terminal.svg',
+  },
+  woods: {
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Woods.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/woods/main_0.16/{z}/{x}/{y}.png',
+  },
+};
+
+// Extracted from tarkov.dev src/data/maps.json (interactive variants only).
+const MAP_INTERACTIVE_CONFIG_BY_NORMALIZED_NAME: Record<string, TarkovMapInteractiveConfig> = {
+  'streets-of-tarkov': {
+    key: 'streets-of-tarkov',
+    minZoom: 1,
+    maxZoom: 5,
+    transform: [0.38, 0, 0.38, 0],
+    coordinateRotation: 180,
+    bounds: [[323, -295], [-280, 532]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/StreetsOfTarkov.svg',
+  },
+  'ground-zero': {
+    key: 'ground-zero',
+    minZoom: 1,
+    maxZoom: 6,
+    transform: [0.524, 167.3, 0.524, 65.1],
+    coordinateRotation: 180,
+    bounds: [[249, -124], [-99, 364]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/GroundZero.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/groundzero/main_summer/{z}/{x}/{y}.png',
+  },
+  customs: {
+    key: 'customs',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.239, 168.65, 0.239, 136.35],
+    coordinateRotation: 180,
+    bounds: [[698, -307], [-372, 237]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Customs.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/customs_0.16/main/{z}/{x}/{y}.png',
+  },
+  factory: {
+    key: 'factory',
+    minZoom: 1,
+    maxZoom: 6,
+    transform: [1.629, 119.9, 1.629, 139.3],
+    coordinateRotation: 90,
+    bounds: [[77, -64.5], [-65.5, 67.4]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Factory.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/factory/main/{z}/{x}/{y}.png',
+  },
+  interchange: {
+    key: 'interchange',
+    minZoom: 1,
+    maxZoom: 6,
+    transform: [0.265, 150.6, 0.265, 134.6],
+    coordinateRotation: 180,
+    bounds: [[598, -442], [-433, 426]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Interchange.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/interchange/main/{z}/{x}/{y}.png',
+  },
+  'the-lab': {
+    key: 'the-lab',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.575, 281.2, 0.575, 193.7],
+    coordinateRotation: 270,
+    bounds: [[-80, -477], [-287, -193]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Labs.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/labs_v4/1st/{z}/{x}/{y}.png',
+  },
+  'the-labyrinth': {
+    key: 'the-labyrinth',
+    minZoom: 1,
+    maxZoom: 6,
+    transform: [2.115, 85.5, 2.115, 128.0],
+    coordinateRotation: 270,
+    bounds: [[-52, -37], [53, 76]],
+    tilePath: 'https://assets.tarkov.dev/maps/labyrinth/main/{z}/{x}/{y}.png',
+  },
+  lighthouse: {
+    key: 'lighthouse',
+    minZoom: 1,
+    maxZoom: 6,
+    transform: [0.2, 0, 0.2, 0],
+    coordinateRotation: 180,
+    bounds: [[515, -998], [-545, 725]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Lighthouse.svg',
+  },
+  reserve: {
+    key: 'reserve',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.395, 122.0, 0.395, 137.65],
+    coordinateRotation: 180,
+    bounds: [[289, -293], [-303, 244]],
+    svgBounds: [[289, -274], [-303, 272]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Reserve.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/reserve/main/{z}/{x}/{y}.png',
+  },
+  shoreline: {
+    key: 'shoreline',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.16, 83.2, 0.16, 111.1],
+    coordinateRotation: 180,
+    bounds: [[504, -415], [-1056, 618]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Shoreline.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/shoreline/main_summer/{z}/{x}/{y}.png',
+  },
+  terminal: {
+    key: 'terminal',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.2, 0, 0.2, 0],
+    coordinateRotation: 180,
+    bounds: [[463, -580], [-433, 475]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Terminal.svg',
+  },
+  woods: {
+    key: 'woods',
+    minZoom: 2,
+    maxZoom: 6,
+    transform: [0.1855, 112.95, 0.1855, 167.85],
+    coordinateRotation: 180,
+    bounds: [[646, -914], [-761, 442]],
+    svgPath: 'https://assets.tarkov.dev/maps/svg/Woods.svg',
+    tilePath: 'https://assets.tarkov.dev/maps/woods/main_0.16/{z}/{x}/{y}.png',
+  },
+};
+
+const MAP_NORMALIZED_NAME_ALIAS: Record<string, string> = {
+  'night-factory': 'factory',
+  'ground-zero-21': 'ground-zero',
+  'ground-zero-tutorial': 'ground-zero',
+};
+
+const MAP_FALLBACK_NAME_BY_NORMALIZED_NAME: Record<string, string> = {
+  'streets-of-tarkov': 'Streets of Tarkov',
+  'ground-zero': 'Ground Zero',
+  customs: 'Customs',
+  factory: 'Factory',
+  interchange: 'Interchange',
+  'the-lab': 'The Lab',
+  'the-labyrinth': 'The Labyrinth',
+  lighthouse: 'Lighthouse',
+  reserve: 'Reserve',
+  shoreline: 'Shoreline',
+  terminal: 'Terminal',
+  woods: 'Woods',
+};
+
+function normalizeMapSlug(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getMapsPersistKey(language: Language, gameMode: GameMode): string {
+  return `${MAPS_PERSIST_KEY_PREFIX}:${gameMode}:${language}`;
+}
+
+async function loadPersistedMaps(
+  language: Language,
+  gameMode: GameMode,
+): Promise<TarkovMapSummary[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(getMapsPersistKey(language, gameMode));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed as TarkovMapSummary[];
+  } catch {
+    return null;
+  }
+}
+
+async function savePersistedMaps(
+  language: Language,
+  gameMode: GameMode,
+  maps: TarkovMapSummary[],
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(getMapsPersistKey(language, gameMode), JSON.stringify(maps));
+  } catch {
+    // ignore cache write errors
+  }
+}
+
+function buildFallbackMapsFromConfig(): TarkovMapSummary[] {
+  const keys = Object.keys(MAP_FALLBACK_NAME_BY_NORMALIZED_NAME);
+  return keys.map((normalizedName) => {
+    const imageLinks = resolveMapImageLinks(normalizedName);
+    const mapConfig = resolveMapInteractiveConfig(normalizedName);
+    return {
+      id: normalizedName,
+      name: MAP_FALLBACK_NAME_BY_NORMALIZED_NAME[normalizedName] || normalizedName,
+      normalizedName,
+      wiki: null,
+      description: null,
+      players: null,
+      raidDuration: null,
+      imageLink: imageLinks.primary,
+      imageFallbackLinks: imageLinks.fallbacks,
+      interactiveImageLink: imageLinks.interactivePrimary,
+      interactiveFallbackLinks: imageLinks.interactiveFallbacks,
+      mapPageLink: imageLinks.mapPageLink,
+      legendStats: null,
+      mapConfig,
+      extracts: [],
+      transits: [],
+      spawns: [],
+      bosses: [],
+      lootContainers: [],
+      switches: [],
+      hazards: [],
+      artilleryZones: [],
+    };
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function resolveMapInteractiveConfig(
+  normalizedName?: string | null,
+): TarkovMapInteractiveConfig | null {
+  const normalized = normalizeMapSlug(normalizedName);
+  if (!normalized) return null;
+  const resourceKey = MAP_NORMALIZED_NAME_ALIAS[normalized] ?? normalized;
+  const config = MAP_INTERACTIVE_CONFIG_BY_NORMALIZED_NAME[resourceKey];
+  if (!config) return null;
+  return {
+    ...config,
+    transform: config.transform ? [...config.transform] : null,
+    bounds: config.bounds ? config.bounds.map((pair) => [...pair]) : null,
+    svgBounds: config.svgBounds ? config.svgBounds.map((pair) => [...pair]) : null,
+  };
+}
+
+function resolveMapImageLinks(
+  normalizedName?: string | null,
+): {
+  primary: string | null;
+  fallbacks: string[];
+  interactivePrimary: string | null;
+  interactiveFallbacks: string[];
+  mapPageLink: string | null;
+} {
+  const normalized = normalizeMapSlug(normalizedName);
+  const resourceKey = MAP_NORMALIZED_NAME_ALIAS[normalized] ?? normalized;
+  const map2dKey = MAP_2D_KEY_BY_NORMALIZED_NAME[resourceKey];
+  const interactiveMapKey = MAP_INTERACTIVE_KEY_BY_NORMALIZED_NAME[resourceKey];
+  const interactiveResource = MAP_INTERACTIVE_RESOURCE_BY_NORMALIZED_NAME[resourceKey];
+  const interactiveConfig = MAP_INTERACTIVE_CONFIG_BY_NORMALIZED_NAME[resourceKey];
+  if (!map2dKey && !interactiveMapKey && !interactiveResource && !interactiveConfig) {
+    return {
+      primary: null,
+      fallbacks: [],
+      interactivePrimary: null,
+      interactiveFallbacks: [],
+      mapPageLink: null,
+    };
+  }
+
+  const tileTemplate = String(interactiveConfig?.tilePath || interactiveResource?.tilePath || '').trim() || null;
+  const tilePreview = tileTemplate
+    ? tileTemplate.replace(/{[xyz]}/g, '0')
+    : null;
+  const svgPath = String(interactiveConfig?.svgPath || interactiveResource?.svgPath || '').trim() || null;
+  const map2dFallback = map2dKey ? `https://tarkov.dev/maps/${map2dKey}.jpg` : null;
+  const imageLink = map2dFallback || svgPath || tilePreview;
+  const fallbacks = [svgPath, tilePreview]
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .filter((value) => value !== imageLink);
+  const interactivePrimary = tileTemplate || svgPath || null;
+  const interactiveFallbacks = [svgPath]
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .filter((value) => value !== interactivePrimary);
+  const mapPageLink = interactiveMapKey
+    ? `https://tarkov.dev/map/${interactiveMapKey}`
+    : null;
+  return {
+    primary: imageLink,
+    fallbacks,
+    interactivePrimary,
+    interactiveFallbacks,
+    mapPageLink,
+  };
+}
+
+export async function fetchMaps(
+  language: Language = 'en',
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
+): Promise<TarkovMapSummary[]> {
+  const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
+  markRequestPriority(options?.priority ?? 'foreground');
+  throwIfAborted(signal);
+  const query = `query MapSummaries($lang: LanguageCode, $gameMode: GameMode) {
+    maps(lang: $lang, gameMode: $gameMode) {
+      id
+      name
+      normalizedName
+      wiki
+      description
+      players
+      raidDuration
+    }
+  }`;
+  let data: { maps?: TarkovMapSummary[] };
+  try {
+    data = await graphqlFetch<{ maps?: TarkovMapSummary[] }>(
+      query,
+      {
+        lang: language,
+        gameMode,
+      },
+      { signal },
+    );
+  } catch (error) {
+    const persisted = await loadPersistedMaps(language, gameMode);
+    if (persisted && persisted.length > 0) {
+      const normalizedPersisted = persisted.map((entry) => {
+        const normalizedName = String(entry?.normalizedName || '').trim() || undefined;
+        const imageLinks = resolveMapImageLinks(normalizedName);
+        return {
+          ...entry,
+          normalizedName,
+          imageLink: imageLinks.primary,
+          imageFallbackLinks: imageLinks.fallbacks,
+          interactiveImageLink: imageLinks.interactivePrimary,
+          interactiveFallbackLinks: imageLinks.interactiveFallbacks,
+          mapPageLink: imageLinks.mapPageLink,
+          mapConfig: resolveMapInteractiveConfig(normalizedName) ?? entry.mapConfig ?? null,
+        };
+      });
+      logWarn('Maps', 'Using persisted map cache after fetch failure', {
+        language,
+        gameMode,
+        count: normalizedPersisted.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return normalizedPersisted;
+    }
+    const fallbackMaps = buildFallbackMapsFromConfig();
+    if (fallbackMaps.length > 0) {
+      logWarn('Maps', 'Using static map fallback after fetch failure', {
+        language,
+        gameMode,
+        count: fallbackMaps.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallbackMaps;
+    }
+    throw error;
+  }
+
+  const rows = data.maps ?? [];
+  const normalized = rows
+    .map((entry) => {
+      const normalizedName = String(entry?.normalizedName || '').trim() || undefined;
+      const imageLinks = resolveMapImageLinks(normalizedName);
+      const mapConfig = resolveMapInteractiveConfig(normalizedName);
+      return {
+        id: String(entry?.id || '').trim(),
+        name: String(entry?.name || '').trim(),
+        normalizedName,
+        wiki: String(entry?.wiki || '').trim() || undefined,
+        description: String(entry?.description || '').trim() || undefined,
+        players: String(entry?.players || '').trim() || undefined,
+        raidDuration: Number.isFinite(entry?.raidDuration)
+          ? Number(entry?.raidDuration)
+          : null,
+        imageLink: imageLinks.primary,
+        imageFallbackLinks: imageLinks.fallbacks,
+        interactiveImageLink: imageLinks.interactivePrimary,
+        interactiveFallbackLinks: imageLinks.interactiveFallbacks,
+        mapPageLink: imageLinks.mapPageLink,
+        mapConfig,
+      };
+    })
+    .filter((entry) => entry.id && entry.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  await savePersistedMaps(language, gameMode, normalized);
+  return normalized;
+}
+
+export async function fetchMapById(
+  mapIdOrName: string,
+  language: Language = 'en',
+  options?: { signal?: AbortSignal; priority?: RequestPriority; gameMode?: GameMode },
+): Promise<TarkovMapSummary | null> {
+  const trimmed = String(mapIdOrName || '').trim();
+  if (!trimmed) return null;
+  const signal = options?.signal;
+  const gameMode = resolveGameMode(options?.gameMode);
+  markRequestPriority(options?.priority ?? 'foreground');
+  throwIfAborted(signal);
+  const normalized = trimmed.toLowerCase();
+  const rows = await fetchMaps(language, {
+    signal,
+    priority: options?.priority,
+    gameMode,
+  });
+  const summary = rows.find((entry) => (
+    entry.id === trimmed
+    || entry.normalizedName === trimmed
+    || entry.normalizedName?.toLowerCase() === normalized
+    || entry.name.toLowerCase() === normalized
+  )) ?? null;
+  if (!summary) return null;
+
+  const detailQuery = `query MapDetail(
+    $lang: LanguageCode
+    $gameMode: GameMode
+    $name: [String!]
+  ) {
+    maps(lang: $lang, gameMode: $gameMode, name: $name) {
+      id
+      name
+      normalizedName
+      extracts {
+        id
+        name
+        faction
+        position {
+          x
+          y
+          z
+        }
+        top
+        bottom
+      }
+      transits {
+        id
+        description
+        position {
+          x
+          y
+          z
+        }
+        top
+        bottom
+      }
+      spawns {
+        zoneName
+        sides
+        categories
+        position {
+          x
+          y
+          z
+        }
+      }
+      bosses {
+        name
+        normalizedName
+        spawnChance
+        spawnLocations {
+          spawnKey
+          name
+          chance
+        }
+      }
+      lootContainers {
+        lootContainer {
+          id
+          name
+          normalizedName
+        }
+        position {
+          x
+          y
+          z
+        }
+      }
+      switches {
+        id
+        name
+        position {
+          x
+          y
+          z
+        }
+      }
+      hazards {
+        hazardType
+        name
+        position {
+          x
+          y
+          z
+        }
+        top
+        bottom
+      }
+      artillery {
+        zones {
+          position {
+            x
+            y
+            z
+          }
+          top
+          bottom
+        }
+      }
+    }
+  }`;
+
+  type RawMapPosition = {
+    x?: number | null;
+    y?: number | null;
+    z?: number | null;
+  };
+
+  type RawMapDetailResponse = {
+    maps?: Array<{
+      id?: string | null;
+      name?: string | null;
+      normalizedName?: string | null;
+      extracts?: Array<{
+        id?: string | null;
+        name?: string | null;
+        faction?: string | null;
+        position?: RawMapPosition | null;
+        top?: number | null;
+        bottom?: number | null;
+      } | null> | null;
+      transits?: Array<{
+        id?: string | null;
+        description?: string | null;
+        position?: RawMapPosition | null;
+        top?: number | null;
+        bottom?: number | null;
+      } | null> | null;
+      spawns?: Array<{
+        zoneName?: string | null;
+        sides?: Array<string | null> | null;
+        categories?: Array<string | null> | null;
+        position?: RawMapPosition | null;
+      } | null> | null;
+      bosses?: Array<{
+        name?: string | null;
+        normalizedName?: string | null;
+        spawnChance?: number | null;
+        spawnLocations?: Array<{
+          spawnKey?: string | null;
+          name?: string | null;
+          chance?: number | null;
+        } | null> | null;
+      } | null> | null;
+      lootContainers?: Array<{
+        lootContainer?: {
+          id?: string | null;
+          name?: string | null;
+          normalizedName?: string | null;
+        } | null;
+        position?: RawMapPosition | null;
+      } | null> | null;
+      switches?: Array<{
+        id?: string | null;
+        name?: string | null;
+        position?: RawMapPosition | null;
+      } | null> | null;
+      hazards?: Array<{
+        hazardType?: string | null;
+        name?: string | null;
+        position?: RawMapPosition | null;
+        top?: number | null;
+        bottom?: number | null;
+      } | null> | null;
+      artillery?: {
+        zones?: Array<{
+          position?: RawMapPosition | null;
+          top?: number | null;
+          bottom?: number | null;
+        } | null> | null;
+      } | null;
+    }>;
+  };
+
+  const detailLookupNames = Array.from(new Set([
+    String(summary.name || '').trim(),
+    String(summary.normalizedName || '').trim(),
+    trimmed,
+  ].filter(Boolean)));
+  let detailData: RawMapDetailResponse;
+  try {
+    detailData = await graphqlFetch<RawMapDetailResponse>(
+      detailQuery,
+      {
+        lang: language,
+        gameMode,
+        name: detailLookupNames,
+      },
+      { signal },
+    );
+  } catch (error) {
+    logWarn('MapDetail', 'Detail fetch failed, using summary fallback', {
+      mapIdOrName: trimmed,
+      language,
+      gameMode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return summary;
+  }
+  const detailRows = detailData.maps ?? [];
+  const detailMatch = detailRows.find((entry) => (
+    String(entry?.id || '').trim() === summary.id
+    || String(entry?.normalizedName || '').trim().toLowerCase() === String(summary.normalizedName || '').toLowerCase()
+    || String(entry?.name || '').trim().toLowerCase() === summary.name.toLowerCase()
+  ));
+
+  if (!detailMatch) {
+    return summary;
+  }
+
+  const toPosition = (value?: RawMapPosition | null) => {
+    if (!value) return null;
+    const x = Number(value.x);
+    const y = Number(value.y);
+    const z = Number(value.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
+  const toFiniteOrNull = (value: number | null | undefined): number | null => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const mapConfig = resolveMapInteractiveConfig(summary.normalizedName ?? detailMatch.normalizedName);
+
+  const extracts: TarkovMapExtract[] = (detailMatch.extracts ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      id: String(entry.id || '').trim() || null,
+      name: String(entry.name || '').trim() || null,
+      faction: String(entry.faction || '').trim() || null,
+      position: toPosition(entry.position),
+      top: toFiniteOrNull(entry.top),
+      bottom: toFiniteOrNull(entry.bottom),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const transits: TarkovMapTransit[] = (detailMatch.transits ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      id: String(entry.id || '').trim() || null,
+      description: String(entry.description || '').trim() || null,
+      position: toPosition(entry.position),
+      top: toFiniteOrNull(entry.top),
+      bottom: toFiniteOrNull(entry.bottom),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const spawns: TarkovMapSpawn[] = (detailMatch.spawns ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      zoneName: String(entry.zoneName || '').trim() || null,
+      sides: (entry.sides ?? [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+      categories: (entry.categories ?? [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+      position: toPosition(entry.position),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const bosses: TarkovMapBossSpawn[] = (detailMatch.bosses ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      name: String(entry.name || '').trim() || null,
+      normalizedName: String(entry.normalizedName || '').trim() || null,
+      spawnChance: toFiniteOrNull(entry.spawnChance),
+      spawnLocations: (entry.spawnLocations ?? [])
+        .filter((location): location is NonNullable<typeof location> => Boolean(location))
+        .map((location) => ({
+          spawnKey: String(location.spawnKey || '').trim() || null,
+          name: String(location.name || '').trim() || null,
+          chance: toFiniteOrNull(location.chance),
+        })),
+    }));
+
+  const lootContainers: TarkovMapLootContainer[] = (detailMatch.lootContainers ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      lootContainer: entry.lootContainer
+        ? {
+          id: String(entry.lootContainer.id || '').trim() || null,
+          name: String(entry.lootContainer.name || '').trim() || null,
+          normalizedName: String(entry.lootContainer.normalizedName || '').trim() || null,
+        }
+        : null,
+      position: toPosition(entry.position),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const switches: TarkovMapSwitch[] = (detailMatch.switches ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      id: String(entry.id || '').trim() || null,
+      name: String(entry.name || '').trim() || null,
+      position: toPosition(entry.position),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const hazards: TarkovMapHazard[] = (detailMatch.hazards ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      hazardType: String(entry.hazardType || '').trim() || null,
+      name: String(entry.name || '').trim() || null,
+      position: toPosition(entry.position),
+      top: toFiniteOrNull(entry.top),
+      bottom: toFiniteOrNull(entry.bottom),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  const artilleryZones: TarkovMapArtilleryZone[] = (detailMatch.artillery?.zones ?? [])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({
+      position: toPosition(entry.position),
+      top: toFiniteOrNull(entry.top),
+      bottom: toFiniteOrNull(entry.bottom),
+    }))
+    .filter((entry) => Boolean(entry.position));
+
+  return {
+    ...summary,
+    mapConfig,
+    extracts,
+    transits,
+    spawns,
+    bosses,
+    lootContainers,
+    switches,
+    hazards,
+    artilleryZones,
+    legendStats: {
+      extracts: extracts.length,
+      transits: transits.length,
+      spawns: spawns.length,
+      bosses: bosses.length,
+      lootContainers: lootContainers.length,
+      switches: switches.length,
+      hazards: hazards.length + artilleryZones.length,
+    },
+  };
 }
 
 async function fetchTraderWithOffersByOffset(

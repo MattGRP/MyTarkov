@@ -6,6 +6,7 @@ import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors, { alphaBlack, getModeAccentTheme, withAlpha } from '@/constants/colors';
+import { getDockBottomOffset, getDockReservedInset } from '@/constants/layout';
 import { useGameMode } from '@/providers/GameModeProvider';
 import { useLanguage } from '@/providers/LanguageProvider';
 
@@ -33,7 +34,7 @@ function DockTabBar(props: BottomTabBarProps) {
   }, [accentTheme, gameMode]);
 
   const shellPaddingBottom = 8;
-  const dockBottomOffset = Math.max(8, Math.round(insets.bottom * 0.42));
+  const dockBottomOffset = getDockBottomOffset(insets.bottom);
 
   return (
     <View pointerEvents="box-none" style={[styles.outerWrap, { paddingBottom: dockBottomOffset }]}>
@@ -111,13 +112,18 @@ function DockTabBar(props: BottomTabBarProps) {
 
 export default function TabLayout() {
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const sceneBottomInset = useMemo(() => getDockReservedInset(insets.bottom), [insets.bottom]);
 
   return (
     <Tabs
       tabBar={(props) => <DockTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: Colors.background },
+        sceneStyle: {
+          backgroundColor: Colors.background,
+          paddingBottom: sceneBottomInset,
+        },
         tabBarBackground: () => <View style={styles.tabBarBackground} />,
         tabBarStyle: {
           position: 'absolute',
