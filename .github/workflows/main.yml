@@ -121,7 +121,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Generate iOS Native Project
-        run: npx expo prebuild --platform ios --non-interactive --no-install
+        run: npx expo prebuild --platform ios --non-interactive --no-install --clean
 
       - name: Install CocoaPods
         run: |
@@ -141,11 +141,20 @@ jobs:
             exit 1
           fi
 
-          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); schemes=(d.get('workspace',{}).get('schemes') or d.get('project',{}).get('schemes') or []); preferred=[s for s in schemes if not s.startswith('Pods-') and 'Tests' not in s and 'UITests' not in s]; print((preferred or schemes or [''])[0])")"
-          if [ -z "$SCHEME" ]; then
-            echo "No Xcode scheme found for workspace: $WORKSPACE"
+          APP_PROJECT="$(find ios -maxdepth 1 -name '*.xcodeproj' ! -name 'Pods.xcodeproj' | head -n 1)"
+          if [ -z "$APP_PROJECT" ]; then
+            echo "No app xcodeproj found under ios/"
             exit 1
           fi
+
+          SCHEME="$(xcodebuild -list -json -project "$APP_PROJECT" | /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); schemes=(d.get('project',{}).get('schemes') or []); preferred=[s for s in schemes if 'Tests' not in s and 'UITests' not in s]; print((preferred or schemes or [''])[0])")"
+          if [ -z "$SCHEME" ]; then
+            echo "No app scheme found for project: $APP_PROJECT"
+            exit 1
+          fi
+          echo "Using workspace: $WORKSPACE"
+          echo "Using app project: $APP_PROJECT"
+          echo "Using scheme: $SCHEME"
 
           ARCHIVE_PATH="ios/build/${SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH"
@@ -161,7 +170,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            archive
+            clean archive
 
       - name: Package Unsigned IPA
         run: |
