@@ -26,13 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -43,11 +36,41 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Dependencies
         run: bun install --frozen-lockfile
+
+      - name: Ensure Android SDK
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            for CANDIDATE in \
+              "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
+              "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+              "/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"; do
+              if [ -x "$CANDIDATE" ]; then
+                SDKMANAGER="$CANDIDATE"
+                break
+              fi
+            done
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found on runner."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+      - name: Generate Android Native Project
+        run: |
+          if [ ! -d android ]; then
+            npx expo prebuild --platform android --non-interactive --no-install
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Build Release APK
         run: |
