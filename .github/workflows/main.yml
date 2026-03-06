@@ -131,7 +131,7 @@ jobs:
           cd ios
           pod install --repo-update
 
-      - name: Build Unsigned .app
+      - name: Build Unsigned Archive
         run: |
           set -euo pipefail
 
@@ -141,11 +141,14 @@ jobs:
             exit 1
           fi
 
-          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); s=(d.get('workspace',{}).get('schemes') or d.get('project',{}).get('schemes') or ['']); print(s[0])")"
+          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); schemes=(d.get('workspace',{}).get('schemes') or d.get('project',{}).get('schemes') or []); preferred=[s for s in schemes if not s.startswith('Pods-') and 'Tests' not in s and 'UITests' not in s]; print((preferred or schemes or [''])[0])")"
           if [ -z "$SCHEME" ]; then
             echo "No Xcode scheme found for workspace: $WORKSPACE"
             exit 1
           fi
+
+          ARCHIVE_PATH="ios/build/${SCHEME}.xcarchive"
+          rm -rf "$ARCHIVE_PATH"
 
           xcodebuild \
             -workspace "$WORKSPACE" \
@@ -153,19 +156,21 @@ jobs:
             -configuration Release \
             -destination generic/platform=iOS \
             -derivedDataPath ios/build \
+            -archivePath "$ARCHIVE_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            build
+            archive
 
       - name: Package Unsigned IPA
         run: |
           set -euo pipefail
 
-          APP_PATH="$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)"
+          APP_PATH="$(find ios/build -type d -path '*/Products/Applications/*.app' | head -n 1)"
           if [ -z "$APP_PATH" ]; then
-            echo "No .app produced in ios/build/Build/Products/Release-iphoneos"
+            echo "No .app produced under ios/build"
+            find ios/build -maxdepth 4 -type d | sed -n '1,120p'
             exit 1
           fi
 
