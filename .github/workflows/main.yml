@@ -1,61 +1,160 @@
-name: Build Expo IPA for AltStore
+name: Build Mobile Artifacts
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: macos-latest
+  android-apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+      EXPO_NO_TELEMETRY: 1
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "20"
 
-      - name: Install dependencies
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Release APK
         run: |
-          npm install -g expo-cli
-          npm install --legacy-peer-deps
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Expo Prebuild (生成 iOS 工程)
-        run: npx expo prebuild --platform ios
-
-      - name: Set up Xcode
+      - name: Verify APK Output
         run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          ls -lah android/app/build/outputs/apk/release
+          test -f android/app/build/outputs/apk/release/app-release.apk
 
-      - name: Build Unsigned IPA
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+  ios-unsigned-ipa:
+    name: iOS Unsigned IPA
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      CI: true
+      EXPO_NO_TELEMETRY: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate iOS Native Project
+        run: npx expo prebuild --platform ios --non-interactive --no-install
+
+      - name: Install CocoaPods
         run: |
-          # Prebuild 默认会生成 ios/ 目录
+          if ! command -v pod >/dev/null 2>&1; then
+            sudo gem install cocoapods
+          fi
           cd ios
-          xcodebuild build \
-            -workspace *.xcworkspace \
-            -scheme $(ls -d *.xcodeproj | sed 's/\.xcodeproj//') \
+          pod install --repo-update
+
+      - name: Build Unsigned .app
+        run: |
+          set -euo pipefail
+
+          WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' | head -n 1)"
+          if [ -z "$WORKSPACE" ]; then
+            echo "No xcworkspace found under ios/"
+            exit 1
+          fi
+
+          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" | /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); s=(d.get('workspace',{}).get('schemes') or d.get('project',{}).get('schemes') or ['']); print(s[0])")"
+          if [ -z "$SCHEME" ]; then
+            echo "No Xcode scheme found for workspace: $WORKSPACE"
+            exit 1
+          fi
+
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath ../build_output \
+            -destination generic/platform=iOS \
+            -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE_SPECIFIER=""
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build
 
-      - name: Create IPA Structure
+      - name: Package Unsigned IPA
         run: |
-          mkdir -p build_ipa/Payload
-          APP_PATH=$(find ./build_output -name "*.app" -type d | grep "Release-iphoneos" | head -n 1)
-          cp -R "$APP_PATH" build_ipa/Payload/
-          cd build_ipa
-          zip -r MyTarkov_Unsigned.ipa Payload
+          set -euo pipefail
 
-      - name: Upload Artifact
+          APP_PATH="$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app produced in ios/build/Build/Products/Release-iphoneos"
+            exit 1
+          fi
+
+          mkdir -p ios/build/Payload
+          cp -R "$APP_PATH" ios/build/Payload/
+
+          cd ios/build
+          zip -qry MyTarkov-unsigned.ipa Payload
+
+      - name: Upload iOS Unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Expo-Tarkov-Unsigned-IPA
-          path: build_ipa/MyTarkov_Unsigned.ipa
+          name: ios-unsigned-ipa
+          path: ios/build/MyTarkov-unsigned.ipa
+          if-no-files-found: error
