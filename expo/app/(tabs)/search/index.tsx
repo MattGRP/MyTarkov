@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, useReducer } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Keyboard, Modal, Pressable, ScrollView, Platform, type LayoutChangeEvent } from 'react-native';
 import { Search, X, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Filter, Package, User, ClipboardList, Store, Skull, Map as MapIcon } from 'lucide-react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -99,6 +99,71 @@ function isAbortRequestError(error: unknown): boolean {
   return name.includes('abort') || message.includes('abort');
 }
 
+// ─── Task filter state ────────────────────────────────────────────────────────
+// Each filter dimension carries its confirmed selection, the in-progress draft
+// shown inside the modal, and whether the modal is open.  Grouping them into a
+// single reducer keeps transitions atomic — opening a modal always snapshots
+// the current selection into draft in one update, and applying always commits
+// draft → selected and closes the modal in one update.
+
+type TaskFilterKey = 'traders' | 'levels' | 'maps' | 'factions';
+
+interface TaskFilterState {
+  traders:  { selected: string[];  draft: string[];  open: boolean };
+  levels:   { selected: number[];  draft: number[];  open: boolean };
+  maps:     { selected: string[];  draft: string[];  open: boolean };
+  factions: { selected: string[];  draft: string[];  open: boolean };
+}
+
+type TaskFilterAction =
+  | { type: 'OPEN';         key: TaskFilterKey }
+  | { type: 'CLOSE';        key: TaskFilterKey }
+  | { type: 'APPLY';        key: TaskFilterKey }
+  | { type: 'CLEAR_DRAFT';  key: TaskFilterKey }
+  | { type: 'TOGGLE_DRAFT_STRING'; key: 'traders' | 'maps' | 'factions'; value: string }
+  | { type: 'TOGGLE_DRAFT_LEVEL';  value: number }
+  | { type: 'RESET_ALL' };
+
+const TASK_FILTER_INITIAL: TaskFilterState = {
+  traders:  { selected: [], draft: [], open: false },
+  levels:   { selected: [], draft: [], open: false },
+  maps:     { selected: [], draft: [], open: false },
+  factions: { selected: [], draft: [], open: false },
+};
+
+function taskFilterReducer(state: TaskFilterState, action: TaskFilterAction): TaskFilterState {
+  switch (action.type) {
+    case 'OPEN':
+      // Atomically copy selected → draft and open the modal
+      return { ...state, [action.key]: { ...state[action.key], draft: [...(state[action.key].selected as unknown[])], open: true } };
+    case 'CLOSE':
+      return { ...state, [action.key]: { ...state[action.key], open: false } };
+    case 'APPLY':
+      // Atomically commit draft → selected and close the modal
+      return { ...state, [action.key]: { ...state[action.key], selected: [...(state[action.key].draft as unknown[])], open: false } };
+    case 'CLEAR_DRAFT':
+      return { ...state, [action.key]: { ...state[action.key], draft: [] } };
+    case 'TOGGLE_DRAFT_STRING': {
+      const current = state[action.key].draft as string[];
+      const next = current.includes(action.value)
+        ? current.filter((v) => v !== action.value)
+        : [...current, action.value];
+      return { ...state, [action.key]: { ...state[action.key], draft: next } };
+    }
+    case 'TOGGLE_DRAFT_LEVEL': {
+      const current = state.levels.draft;
+      const next = current.includes(action.value)
+        ? current.filter((v) => v !== action.value)
+        : [...current, action.value];
+      return { ...state, levels: { ...state.levels, draft: next } };
+    }
+    case 'RESET_ALL':
+      return TASK_FILTER_INITIAL;
+    default:
+      return state;
+  }
+}
+
 export default function SearchScreen() {
   const { t, language } = useLanguage();
   const { gameMode } = useGameMode();
@@ -123,18 +188,13 @@ export default function SearchScreen() {
   const [playerVisibleCount, setPlayerVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
   const [recentPlayers, setRecentPlayers] = useState<SearchResult[]>([]);
 
-  const [selectedTaskTraders, setSelectedTaskTraders] = useState<string[]>([]);
-  const [draftTaskTraders, setDraftTaskTraders] = useState<string[]>([]);
-  const [taskTraderModalOpen, setTaskTraderModalOpen] = useState(false);
-  const [selectedTaskLevels, setSelectedTaskLevels] = useState<number[]>([]);
-  const [draftTaskLevels, setDraftTaskLevels] = useState<number[]>([]);
-  const [taskLevelModalOpen, setTaskLevelModalOpen] = useState(false);
-  const [selectedTaskMaps, setSelectedTaskMaps] = useState<string[]>([]);
-  const [draftTaskMaps, setDraftTaskMaps] = useState<string[]>([]);
-  const [taskMapModalOpen, setTaskMapModalOpen] = useState(false);
-  const [selectedTaskFactions, setSelectedTaskFactions] = useState<string[]>([]);
-  const [draftTaskFactions, setDraftTaskFactions] = useState<string[]>([]);
-  const [taskFactionModalOpen, setTaskFactionModalOpen] = useState(false);
+  const [taskFilters, dispatchTaskFilter] = useReducer(taskFilterReducer, TASK_FILTER_INITIAL);
+  const { traders: taskTraderFilter, levels: taskLevelFilter, maps: taskMapFilter, factions: taskFactionFilter } = taskFilters;
+  // Convenience aliases for the confirmed selections (used in filter logic below)
+  const selectedTaskTraders = taskTraderFilter.selected;
+  const selectedTaskLevels  = taskLevelFilter.selected;
+  const selectedTaskMaps    = taskMapFilter.selected;
+  const selectedTaskFactions = taskFactionFilter.selected;
   const [only3x4Required, setOnly3x4Required] = useState(false);
   const [onlyLightkeeperRequired, setOnlyLightkeeperRequired] = useState(false);
   const [mapVisibleCount, setMapVisibleCount] = useState<number>(SEARCH_LIST_PAGE_SIZE);
@@ -568,16 +628,21 @@ export default function SearchScreen() {
     setIsTokenResolving(false);
   }, [isFocused]);
 
+  // Separate the locale comparator so it's only rebuilt when language changes,
+  // not every time itemResults changes.
+  const categoryCompareFn = useMemo(() => {
+    const locale = language === 'zh' ? 'zh-Hans-CN' : language === 'ru' ? 'ru-RU' : 'en';
+    return (a: string, b: string) =>
+      localizeCategoryName(a, language).localeCompare(localizeCategoryName(b, language), locale);
+  }, [language]);
+
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
     itemResults.forEach((item) => {
       if (item.category?.name) set.add(item.category.name);
     });
-    const locale = language === 'zh' ? 'zh-Hans-CN' : language === 'ru' ? 'ru-RU' : 'en';
-    return Array.from(set).sort((a, b) => (
-      localizeCategoryName(a, language).localeCompare(localizeCategoryName(b, language), locale)
-    ));
-  }, [itemResults, language]);
+    return Array.from(set).sort(categoryCompareFn);
+  }, [itemResults, categoryCompareFn]);
 
   const effectiveCategories = useMemo(() => {
     if (categoryFilter.length === 0) return [];
@@ -1027,10 +1092,7 @@ export default function SearchScreen() {
     setHasRetriedWithFreshToken(false);
 
     setCategoryModalOpen(false);
-    setTaskTraderModalOpen(false);
-    setTaskLevelModalOpen(false);
-    setTaskMapModalOpen(false);
-    setTaskFactionModalOpen(false);
+    dispatchTaskFilter({ type: 'RESET_ALL' });
   }, [resetItemSearch, resetPlayerSearch, searchMode]);
   const handleTokenModalClose = useCallback(() => {
     setTokenModalVisible(false);
@@ -1092,93 +1154,33 @@ export default function SearchScreen() {
 
   const draftCategorySet = useMemo(() => new Set(draftCategories), [draftCategories]);
 
-  const openTaskTraderModal = useCallback(() => {
-    setDraftTaskTraders(selectedTaskTraders);
-    setTaskTraderModalOpen(true);
-  }, [selectedTaskTraders]);
-  const closeTaskTraderModal = useCallback(() => {
-    setTaskTraderModalOpen(false);
-  }, []);
-  const toggleDraftTaskTrader = useCallback((key: string) => {
-    setDraftTaskTraders((prev) => {
-      if (prev.includes(key)) return prev.filter((item) => item !== key);
-      return [...prev, key];
-    });
-  }, []);
-  const clearTaskTraderFilter = useCallback(() => {
-    setDraftTaskTraders([]);
-  }, []);
-  const applyTaskTraderFilter = useCallback(() => {
-    setSelectedTaskTraders(draftTaskTraders);
-    setTaskTraderModalOpen(false);
-  }, [draftTaskTraders]);
-  const draftTaskTraderSet = useMemo(() => new Set(draftTaskTraders), [draftTaskTraders]);
+  const openTaskTraderModal   = useCallback(() => dispatchTaskFilter({ type: 'OPEN',  key: 'traders' }), []);
+  const closeTaskTraderModal  = useCallback(() => dispatchTaskFilter({ type: 'CLOSE', key: 'traders' }), []);
+  const toggleDraftTaskTrader = useCallback((value: string) => dispatchTaskFilter({ type: 'TOGGLE_DRAFT_STRING', key: 'traders', value }), []);
+  const clearTaskTraderFilter = useCallback(() => dispatchTaskFilter({ type: 'CLEAR_DRAFT', key: 'traders' }), []);
+  const applyTaskTraderFilter = useCallback(() => dispatchTaskFilter({ type: 'APPLY', key: 'traders' }), []);
+  const draftTaskTraderSet    = useMemo(() => new Set(taskTraderFilter.draft), [taskTraderFilter.draft]);
 
-  const openTaskLevelModal = useCallback(() => {
-    setDraftTaskLevels(selectedTaskLevels);
-    setTaskLevelModalOpen(true);
-  }, [selectedTaskLevels]);
-  const closeTaskLevelModal = useCallback(() => {
-    setTaskLevelModalOpen(false);
-  }, []);
-  const toggleDraftTaskLevel = useCallback((level: number) => {
-    setDraftTaskLevels((prev) => {
-      if (prev.includes(level)) return prev.filter((item) => item !== level);
-      return [...prev, level];
-    });
-  }, []);
-  const clearTaskLevelFilter = useCallback(() => {
-    setDraftTaskLevels([]);
-  }, []);
-  const applyTaskLevelFilter = useCallback(() => {
-    setSelectedTaskLevels(draftTaskLevels);
-    setTaskLevelModalOpen(false);
-  }, [draftTaskLevels]);
-  const draftTaskLevelSet = useMemo(() => new Set(draftTaskLevels), [draftTaskLevels]);
+  const openTaskLevelModal    = useCallback(() => dispatchTaskFilter({ type: 'OPEN',  key: 'levels' }), []);
+  const closeTaskLevelModal   = useCallback(() => dispatchTaskFilter({ type: 'CLOSE', key: 'levels' }), []);
+  const toggleDraftTaskLevel  = useCallback((value: number) => dispatchTaskFilter({ type: 'TOGGLE_DRAFT_LEVEL', value }), []);
+  const clearTaskLevelFilter  = useCallback(() => dispatchTaskFilter({ type: 'CLEAR_DRAFT', key: 'levels' }), []);
+  const applyTaskLevelFilter  = useCallback(() => dispatchTaskFilter({ type: 'APPLY', key: 'levels' }), []);
+  const draftTaskLevelSet     = useMemo(() => new Set(taskLevelFilter.draft), [taskLevelFilter.draft]);
 
-  const openTaskMapModal = useCallback(() => {
-    setDraftTaskMaps(selectedTaskMaps);
-    setTaskMapModalOpen(true);
-  }, [selectedTaskMaps]);
-  const closeTaskMapModal = useCallback(() => {
-    setTaskMapModalOpen(false);
-  }, []);
-  const toggleDraftTaskMap = useCallback((key: string) => {
-    setDraftTaskMaps((prev) => {
-      if (prev.includes(key)) return prev.filter((item) => item !== key);
-      return [...prev, key];
-    });
-  }, []);
-  const clearTaskMapFilter = useCallback(() => {
-    setDraftTaskMaps([]);
-  }, []);
-  const applyTaskMapFilter = useCallback(() => {
-    setSelectedTaskMaps(draftTaskMaps);
-    setTaskMapModalOpen(false);
-  }, [draftTaskMaps]);
-  const draftTaskMapSet = useMemo(() => new Set(draftTaskMaps), [draftTaskMaps]);
+  const openTaskMapModal      = useCallback(() => dispatchTaskFilter({ type: 'OPEN',  key: 'maps' }), []);
+  const closeTaskMapModal     = useCallback(() => dispatchTaskFilter({ type: 'CLOSE', key: 'maps' }), []);
+  const toggleDraftTaskMap    = useCallback((value: string) => dispatchTaskFilter({ type: 'TOGGLE_DRAFT_STRING', key: 'maps', value }), []);
+  const clearTaskMapFilter    = useCallback(() => dispatchTaskFilter({ type: 'CLEAR_DRAFT', key: 'maps' }), []);
+  const applyTaskMapFilter    = useCallback(() => dispatchTaskFilter({ type: 'APPLY', key: 'maps' }), []);
+  const draftTaskMapSet       = useMemo(() => new Set(taskMapFilter.draft), [taskMapFilter.draft]);
 
-  const openTaskFactionModal = useCallback(() => {
-    setDraftTaskFactions(selectedTaskFactions);
-    setTaskFactionModalOpen(true);
-  }, [selectedTaskFactions]);
-  const closeTaskFactionModal = useCallback(() => {
-    setTaskFactionModalOpen(false);
-  }, []);
-  const toggleDraftTaskFaction = useCallback((key: string) => {
-    setDraftTaskFactions((prev) => {
-      if (prev.includes(key)) return prev.filter((item) => item !== key);
-      return [...prev, key];
-    });
-  }, []);
-  const clearTaskFactionFilter = useCallback(() => {
-    setDraftTaskFactions([]);
-  }, []);
-  const applyTaskFactionFilter = useCallback(() => {
-    setSelectedTaskFactions(draftTaskFactions);
-    setTaskFactionModalOpen(false);
-  }, [draftTaskFactions]);
-  const draftTaskFactionSet = useMemo(() => new Set(draftTaskFactions), [draftTaskFactions]);
+  const openTaskFactionModal    = useCallback(() => dispatchTaskFilter({ type: 'OPEN',  key: 'factions' }), []);
+  const closeTaskFactionModal   = useCallback(() => dispatchTaskFilter({ type: 'CLOSE', key: 'factions' }), []);
+  const toggleDraftTaskFaction  = useCallback((value: string) => dispatchTaskFilter({ type: 'TOGGLE_DRAFT_STRING', key: 'factions', value }), []);
+  const clearTaskFactionFilter  = useCallback(() => dispatchTaskFilter({ type: 'CLEAR_DRAFT', key: 'factions' }), []);
+  const applyTaskFactionFilter  = useCallback(() => dispatchTaskFilter({ type: 'APPLY', key: 'factions' }), []);
+  const draftTaskFactionSet     = useMemo(() => new Set(taskFactionFilter.draft), [taskFactionFilter.draft]);
   const themeStyles = useMemo(() => ({
     modeChipActive: {
       borderColor: accentTheme.accent,
@@ -2113,7 +2115,7 @@ export default function SearchScreen() {
       </Modal>
 
       <Modal
-        visible={searchMode === 'task' && taskTraderModalOpen}
+        visible={searchMode === 'task' && taskTraderFilter.open}
         transparent
         animationType="fade"
         onRequestClose={closeTaskTraderModal}
@@ -2159,7 +2161,7 @@ export default function SearchScreen() {
       </Modal>
 
       <Modal
-        visible={searchMode === 'task' && taskLevelModalOpen}
+        visible={searchMode === 'task' && taskLevelFilter.open}
         transparent
         animationType="fade"
         onRequestClose={closeTaskLevelModal}
@@ -2205,7 +2207,7 @@ export default function SearchScreen() {
       </Modal>
 
       <Modal
-        visible={searchMode === 'task' && taskMapModalOpen}
+        visible={searchMode === 'task' && taskMapFilter.open}
         transparent
         animationType="fade"
         onRequestClose={closeTaskMapModal}
@@ -2251,7 +2253,7 @@ export default function SearchScreen() {
       </Modal>
 
       <Modal
-        visible={searchMode === 'task' && taskFactionModalOpen}
+        visible={searchMode === 'task' && taskFactionFilter.open}
         transparent
         animationType="fade"
         onRequestClose={closeTaskFactionModal}

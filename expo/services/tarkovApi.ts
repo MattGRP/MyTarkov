@@ -55,6 +55,10 @@ const BOSS_MAP_CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
 const BOSS_HYDRATED_ITEM_CACHE_TTL_MS = 30 * 60 * 1000;
 const PROFILE_CACHE_MODES: GameMode[] = ['regular', 'pve'];
 
+const TRADER_DETAIL_CACHE_LIMIT = 20;
+const BOSS_MAP_CONTEXT_CACHE_LIMIT = 20;
+const BOSS_HYDRATED_ITEM_CACHE_LIMIT = 200;
+
 const CORS_PROXIES = [
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -84,6 +88,18 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
+}
+
+/**
+ * Evicts the oldest (first-inserted) entry when the cache has reached its
+ * capacity limit.  All in-process Map caches use this helper so the eviction
+ * strategy stays consistent and only needs to change in one place.
+ */
+function evictOldestIfAtLimit<V>(cache: Map<string, V>, limit: number): void {
+  if (cache.size >= limit) {
+    const firstKey = cache.keys().next().value as string | undefined;
+    if (firstKey) cache.delete(firstKey);
+  }
 }
 
 async function mapWithConcurrency<T, R>(
@@ -124,8 +140,16 @@ function stableSerialize(value: unknown): string {
 
 function setGraphqlCacheEntry(key: string, data: unknown): void {
   if (graphqlResponseCache.size >= GRAPHQL_RESPONSE_CACHE_LIMIT) {
-    const firstKey = graphqlResponseCache.keys().next().value as string | undefined;
-    if (firstKey) graphqlResponseCache.delete(firstKey);
+    // Prefer evicting an already-expired entry over a still-valid one
+    const now = Date.now();
+    let evictKey: string | undefined;
+    for (const [k, v] of graphqlResponseCache) {
+      if (v.expiresAt <= now) { evictKey = k; break; }
+    }
+    if (!evictKey) {
+      evictKey = graphqlResponseCache.keys().next().value as string | undefined;
+    }
+    if (evictKey) graphqlResponseCache.delete(evictKey);
   }
   graphqlResponseCache.set(key, {
     expiresAt: Date.now() + GRAPHQL_RESPONSE_CACHE_TTL_MS,
@@ -417,7 +441,10 @@ export async function getPlayerSearchToken(): Promise<string | null> {
 }
 
 export async function getPlayerSearchTokenUpdatedAt(): Promise<number | null> {
-  await loadPlayerSearchToken();
+  // Both cached* variables are always written together; checking one is enough.
+  if (cachedPlayerSearchTokenUpdatedAt === undefined) {
+    await loadPlayerSearchToken();
+  }
   return cachedPlayerSearchTokenUpdatedAt ?? null;
 }
 
@@ -464,11 +491,15 @@ async function loadPersistedPlayerProfile(
     const updatedAt = Number(parsed?.updatedAt || 0);
     const profile = parsed?.profile;
     if (!profile || !profile.info?.nickname) {
-      void AsyncStorage.removeItem(storageKey);
+      AsyncStorage.removeItem(storageKey).catch((err) => {
+        logWarn('TarkovAPI', 'Failed to remove invalid persisted profile', err);
+      });
       return null;
     }
     if (!Number.isFinite(updatedAt) || updatedAt <= 0 || updatedAt + PLAYER_PROFILE_PERSIST_TTL_MS < Date.now()) {
-      void AsyncStorage.removeItem(storageKey);
+      AsyncStorage.removeItem(storageKey).catch((err) => {
+        logWarn('TarkovAPI', 'Failed to remove expired persisted profile', err);
+      });
       return null;
     }
     return profile;
@@ -701,10 +732,7 @@ export async function fetchPlayerProfile(
     if (!force) {
       const persisted = await loadPersistedPlayerProfile(trimmed, gameMode);
       if (persisted) {
-        if (playerProfileCache.size >= PLAYER_PROFILE_CACHE_LIMIT) {
-          const firstKey = playerProfileCache.keys().next().value as string | undefined;
-          if (firstKey) playerProfileCache.delete(firstKey);
-        }
+        evictOldestIfAtLimit(playerProfileCache, PLAYER_PROFILE_CACHE_LIMIT);
         playerProfileCache.set(cacheKey, {
           expiresAt: Date.now() + PLAYER_PROFILE_CACHE_TTL_MS,
           profile: persisted,
@@ -738,10 +766,7 @@ export async function fetchPlayerProfile(
     }
 
     logInfo('TarkovAPI', 'Profile loaded', profile?.info?.nickname);
-    if (playerProfileCache.size >= PLAYER_PROFILE_CACHE_LIMIT) {
-      const firstKey = playerProfileCache.keys().next().value as string | undefined;
-      if (firstKey) playerProfileCache.delete(firstKey);
-    }
+    evictOldestIfAtLimit(playerProfileCache, PLAYER_PROFILE_CACHE_LIMIT);
     playerProfileCache.set(cacheKey, {
       expiresAt: Date.now() + PLAYER_PROFILE_CACHE_TTL_MS,
       profile,
@@ -1007,10 +1032,7 @@ function getCachedPlayerSearchResults(cacheKey: string): SearchResult[] | null {
 }
 
 function setCachedPlayerSearchResults(cacheKey: string, results: SearchResult[]): void {
-  if (playerSearchResultCache.size >= PLAYER_SEARCH_CACHE_LIMIT) {
-    const firstKey = playerSearchResultCache.keys().next().value as string | undefined;
-    if (firstKey) playerSearchResultCache.delete(firstKey);
-  }
+  evictOldestIfAtLimit(playerSearchResultCache, PLAYER_SEARCH_CACHE_LIMIT);
   playerSearchResultCache.set(cacheKey, {
     expiresAt: Date.now() + PLAYER_SEARCH_CACHE_TTL_MS,
     results,
@@ -1047,10 +1069,7 @@ function getCachedItemSearchResults(cacheKey: string): ItemSearchResult[] | null
 }
 
 function setCachedItemSearchResults(cacheKey: string, results: ItemSearchResult[]): void {
-  if (itemSearchResultCache.size >= ITEM_SEARCH_CACHE_LIMIT) {
-    const firstKey = itemSearchResultCache.keys().next().value as string | undefined;
-    if (firstKey) itemSearchResultCache.delete(firstKey);
-  }
+  evictOldestIfAtLimit(itemSearchResultCache, ITEM_SEARCH_CACHE_LIMIT);
   itemSearchResultCache.set(cacheKey, {
     expiresAt: Date.now() + ITEM_SEARCH_CACHE_TTL_MS,
     results,
@@ -3800,6 +3819,7 @@ async function fetchTraderWithOffersByOffset(
   );
   const trader = data.traders?.[0] ?? null;
   if (!trader) return null;
+  evictOldestIfAtLimit(traderDetailCache, TRADER_DETAIL_CACHE_LIMIT);
   traderDetailCache.set(cacheKey, {
     expiresAt: Date.now() + TRADER_DETAIL_CACHE_TTL_MS,
     data: trader,
@@ -3946,6 +3966,7 @@ function getBossMapContextFromCache(language: Language, gameMode: GameMode): Bos
 
 function setBossMapContextToCache(language: Language, gameMode: GameMode, data: BossMapSpawnContext): void {
   const cacheKey = getBossMapContextCacheKey(language, gameMode);
+  evictOldestIfAtLimit(bossMapSpawnContextCache, BOSS_MAP_CONTEXT_CACHE_LIMIT);
   bossMapSpawnContextCache.set(cacheKey, {
     expiresAt: Date.now() + BOSS_MAP_CONTEXT_CACHE_TTL_MS,
     data,
@@ -3965,6 +3986,7 @@ function getBossHydratedItemFromCache(itemId: string, language: Language): RawHy
 
 function setBossHydratedItemToCache(itemId: string, language: Language, data: RawHydratedBossItem): void {
   const key = getBossHydratedItemCacheKey(itemId, language);
+  evictOldestIfAtLimit(bossHydratedItemCache, BOSS_HYDRATED_ITEM_CACHE_LIMIT);
   bossHydratedItemCache.set(key, {
     expiresAt: Date.now() + BOSS_HYDRATED_ITEM_CACHE_TTL_MS,
     data,
