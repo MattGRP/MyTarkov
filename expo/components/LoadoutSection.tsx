@@ -34,157 +34,58 @@ const COMPOSED_WEAPON_SLOTS = new Set(['FirstPrimaryWeapon', 'SecondPrimaryWeapo
 const GRID_CELL_PX = 48;
 const GRID_MAX_PX = 168;
 
-const DYNAMIC_SLOT_LABELS: Record<Language, Record<string, string>> = {
-  en: {
-    mod_pistol_grip: 'Pistol Grip',
-    mod_foregrip: 'Foregrip',
-    mod_magazine: 'Magazine',
-    mod_reciever: 'Upper Receiver',
-    mod_receiver: 'Upper Receiver',
-    mod_stock: 'Stock',
-    mod_handguard: 'Handguard',
-    mod_barrel: 'Barrel',
-    mod_gas_block: 'Gas Block',
-    mod_muzzle: 'Muzzle',
-    mod_scope: 'Optic',
-    mod_mount: 'Mount',
-    mod_charge: 'Charging Handle',
-    patron_in_weapon: 'Chamber',
-    mod_launcher: 'Launcher',
-    mod_bipod: 'Bipod',
-    mod_tactical: 'Tactical',
-    mod_nvg: 'NVG',
-    mod_flashlight: 'Flashlight',
-    mod_attachment: 'Attachment',
-    soft_armor: 'Soft Armor',
-    helmet: 'Helmet',
-  },
-  zh: {
-    mod_pistol_grip: '手枪握把',
-    mod_foregrip: '前握把',
-    mod_magazine: '弹匣',
-    mod_reciever: '上机匣',
-    mod_receiver: '上机匣',
-    mod_stock: '枪托',
-    mod_handguard: '护木',
-    mod_barrel: '枪管',
-    mod_gas_block: '导气箍',
-    mod_muzzle: '枪口',
-    mod_scope: '瞄具',
-    mod_mount: '导轨',
-    mod_charge: '拉机柄',
-    patron_in_weapon: '膛内子弹',
-    mod_launcher: '榴弹发射器',
-    mod_bipod: '两脚架',
-    mod_tactical: '战术位',
-    mod_nvg: '夜视设备',
-    mod_flashlight: '战术灯',
-    mod_attachment: '配件',
-    soft_armor: '软甲',
-    helmet: '头盔',
-  },
-  ru: {
-    mod_pistol_grip: 'Пистолетная рукоять',
-    mod_foregrip: 'Передняя рукоять',
-    mod_magazine: 'Магазин',
-    mod_reciever: 'Верхний ресивер',
-    mod_receiver: 'Верхний ресивер',
-    mod_stock: 'Приклад',
-    mod_handguard: 'Цевье',
-    mod_barrel: 'Ствол',
-    mod_gas_block: 'Газблок',
-    mod_muzzle: 'Дульное устройство',
-    mod_scope: 'Прицел',
-    mod_mount: 'Крепление',
-    mod_charge: 'Рукоятка взвода',
-    patron_in_weapon: 'Патрон в патроннике',
-    mod_launcher: 'Подствольник',
-    mod_bipod: 'Сошки',
-    mod_tactical: 'Тактический слот',
-    mod_nvg: 'ПНВ',
-    mod_flashlight: 'Фонарь',
-    mod_attachment: 'Модуль',
-    soft_armor: 'Мягкая броня',
-    helmet: 'Шлем',
-  },
+// Keyed by slot name; each entry holds translations for all languages.
+// Adding a new slot = one entry here, not three.
+const DYNAMIC_SLOT_LABELS: Record<string, Record<Language, string>> = {
+  mod_pistol_grip:  { en: 'Pistol Grip',      zh: '手枪握把',   ru: 'Пистолетная рукоять' },
+  mod_foregrip:     { en: 'Foregrip',          zh: '前握把',    ru: 'Передняя рукоять' },
+  mod_magazine:     { en: 'Magazine',          zh: '弹匣',     ru: 'Магазин' },
+  mod_reciever:     { en: 'Upper Receiver',    zh: '上机匣',    ru: 'Верхний ресивер' },
+  mod_receiver:     { en: 'Upper Receiver',    zh: '上机匣',    ru: 'Верхний ресивер' },
+  mod_stock:        { en: 'Stock',             zh: '枪托',     ru: 'Приклад' },
+  mod_handguard:    { en: 'Handguard',         zh: '护木',     ru: 'Цевье' },
+  mod_barrel:       { en: 'Barrel',            zh: '枪管',     ru: 'Ствол' },
+  mod_gas_block:    { en: 'Gas Block',         zh: '导气箍',    ru: 'Газблок' },
+  mod_muzzle:       { en: 'Muzzle',            zh: '枪口',     ru: 'Дульное устройство' },
+  mod_scope:        { en: 'Optic',             zh: '瞄具',     ru: 'Прицел' },
+  mod_mount:        { en: 'Mount',             zh: '导轨',     ru: 'Крепление' },
+  mod_charge:       { en: 'Charging Handle',   zh: '拉机柄',    ru: 'Рукоятка взвода' },
+  patron_in_weapon: { en: 'Chamber',           zh: '膛内子弹',  ru: 'Патрон в патроннике' },
+  mod_launcher:     { en: 'Launcher',          zh: '榴弹发射器', ru: 'Подствольник' },
+  mod_bipod:        { en: 'Bipod',             zh: '两脚架',    ru: 'Сошки' },
+  mod_tactical:     { en: 'Tactical',          zh: '战术位',    ru: 'Тактический слот' },
+  mod_nvg:          { en: 'NVG',               zh: '夜视设备',  ru: 'ПНВ' },
+  mod_flashlight:   { en: 'Flashlight',        zh: '战术灯',    ru: 'Фонарь' },
+  mod_attachment:   { en: 'Attachment',        zh: '配件',     ru: 'Модуль' },
+  soft_armor:       { en: 'Soft Armor',        zh: '软甲',     ru: 'Мягкая броня' },
+  helmet:           { en: 'Helmet',            zh: '头盔',     ru: 'Шлем' },
 };
 
-const DYNAMIC_SLOT_TOKENS: Record<Language, Record<string, string>> = {
-  en: {
-    pistol: 'Pistol',
-    grip: 'Grip',
-    foregrip: 'Foregrip',
-    magazine: 'Magazine',
-    reciever: 'Receiver',
-    receiver: 'Receiver',
-    stock: 'Stock',
-    handguard: 'Handguard',
-    barrel: 'Barrel',
-    gas: 'Gas',
-    block: 'Block',
-    muzzle: 'Muzzle',
-    scope: 'Scope',
-    mount: 'Mount',
-    charge: 'Charging',
-    tactical: 'Tactical',
-    launcher: 'Launcher',
-    patron: 'Round',
-    weapon: 'Weapon',
-    chamber: 'Chamber',
-    helmet: 'Helmet',
-    soft: 'Soft',
-    armor: 'Armor',
-  },
-  zh: {
-    pistol: '手枪',
-    grip: '握把',
-    foregrip: '前握把',
-    magazine: '弹匣',
-    reciever: '机匣',
-    receiver: '机匣',
-    stock: '枪托',
-    handguard: '护木',
-    barrel: '枪管',
-    gas: '导气',
-    block: '箍',
-    muzzle: '枪口',
-    scope: '瞄具',
-    mount: '导轨',
-    charge: '拉机柄',
-    tactical: '战术',
-    launcher: '榴弹',
-    patron: '子弹',
-    weapon: '武器',
-    chamber: '膛',
-    helmet: '头盔',
-    soft: '软',
-    armor: '甲',
-  },
-  ru: {
-    pistol: 'Пистолетная',
-    grip: 'рукоять',
-    foregrip: 'передняя рукоять',
-    magazine: 'магазин',
-    reciever: 'ресивер',
-    receiver: 'ресивер',
-    stock: 'приклад',
-    handguard: 'цевье',
-    barrel: 'ствол',
-    gas: 'газ',
-    block: 'блок',
-    muzzle: 'дульное',
-    scope: 'прицел',
-    mount: 'крепление',
-    charge: 'взвод',
-    tactical: 'тактический',
-    launcher: 'подствольник',
-    patron: 'патрон',
-    weapon: 'оружие',
-    chamber: 'патронник',
-    helmet: 'шлем',
-    soft: 'мягкая',
-    armor: 'броня',
-  },
+// Keyed by token word; each entry holds translations for all languages.
+const DYNAMIC_SLOT_TOKENS: Record<string, Record<Language, string>> = {
+  pistol:    { en: 'Pistol',      zh: '手枪',   ru: 'Пистолетная' },
+  grip:      { en: 'Grip',        zh: '握把',   ru: 'рукоять' },
+  foregrip:  { en: 'Foregrip',    zh: '前握把',  ru: 'передняя рукоять' },
+  magazine:  { en: 'Magazine',    zh: '弹匣',   ru: 'магазин' },
+  reciever:  { en: 'Receiver',    zh: '机匣',   ru: 'ресивер' },
+  receiver:  { en: 'Receiver',    zh: '机匣',   ru: 'ресивер' },
+  stock:     { en: 'Stock',       zh: '枪托',   ru: 'приклад' },
+  handguard: { en: 'Handguard',   zh: '护木',   ru: 'цевье' },
+  barrel:    { en: 'Barrel',      zh: '枪管',   ru: 'ствол' },
+  gas:       { en: 'Gas',         zh: '导气',   ru: 'газ' },
+  block:     { en: 'Block',       zh: '箍',     ru: 'блок' },
+  muzzle:    { en: 'Muzzle',      zh: '枪口',   ru: 'дульное' },
+  scope:     { en: 'Scope',       zh: '瞄具',   ru: 'прицел' },
+  mount:     { en: 'Mount',       zh: '导轨',   ru: 'крепление' },
+  charge:    { en: 'Charging',    zh: '拉机柄',  ru: 'взвод' },
+  tactical:  { en: 'Tactical',    zh: '战术',   ru: 'тактический' },
+  launcher:  { en: 'Launcher',    zh: '榴弹',   ru: 'подствольник' },
+  patron:    { en: 'Round',       zh: '子弹',   ru: 'патрон' },
+  weapon:    { en: 'Weapon',      zh: '武器',   ru: 'оружие' },
+  chamber:   { en: 'Chamber',     zh: '膛',     ru: 'патронник' },
+  helmet:    { en: 'Helmet',      zh: '头盔',   ru: 'шлем' },
+  soft:      { en: 'Soft',        zh: '软',     ru: 'мягкая' },
+  armor:     { en: 'Armor',       zh: '甲',     ru: 'броня' },
 };
 
 function toTitleCase(value: string): string {
@@ -197,20 +98,22 @@ function getDynamicSlotLabel(slot: string, language: Language): string {
   if (!normalized) return '';
 
   const lower = normalized.toLowerCase();
-  const directMap = DYNAMIC_SLOT_LABELS[language];
-  if (directMap[lower]) {
-    return directMap[lower];
-  }
 
-  const genericDirectKeys = Object.keys(directMap).filter(
+  // Direct slot key match
+  const directEntry = DYNAMIC_SLOT_LABELS[lower];
+  if (directEntry) return directEntry[language];
+
+  // Prefix/suffix match for generic slots (e.g. soft_armor_*, helmet_*)
+  const genericKeys = Object.keys(DYNAMIC_SLOT_LABELS).filter(
     (key) => key.startsWith('soft_armor') || key.startsWith('helmet'),
   );
-  for (const key of genericDirectKeys) {
+  for (const key of genericKeys) {
     if (lower.startsWith(`${key}_`) || lower.includes(`_${key}_`) || lower.endsWith(`_${key}`)) {
-      return directMap[key];
+      return DYNAMIC_SLOT_LABELS[key][language];
     }
   }
 
+  // Token-based fallback: split by underscores/dashes and translate each word
   const cleaned = lower.replace(/^mod[_-]?/i, '');
   const tokens = cleaned
     .split(/[_-]+/g)
@@ -219,17 +122,14 @@ function getDynamicSlotLabel(slot: string, language: Language): string {
 
   if (tokens.length === 0) return normalized;
 
-  const tokenMap = DYNAMIC_SLOT_TOKENS[language];
   const translatedTokens = tokens.map((token) => {
-    if (tokenMap[token]) return tokenMap[token];
+    const tokenEntry = DYNAMIC_SLOT_TOKENS[token];
+    if (tokenEntry) return tokenEntry[language];
     if (language === 'en') return toTitleCase(token);
     return token;
   });
 
-  if (language === 'zh') {
-    return translatedTokens.join('');
-  }
-  return translatedTokens.join(' ');
+  return language === 'zh' ? translatedTokens.join('') : translatedTokens.join(' ');
 }
 
 function getGridSize(meta?: { width?: number; height?: number }) {

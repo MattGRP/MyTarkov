@@ -181,6 +181,12 @@ class PlayerSearchError extends Error {
   }
 }
 
+interface PlayerApiErrorPayload {
+  err?: boolean | number;
+  errmsg?: string;
+  message?: string;
+}
+
 function createTurnstileError(): PlayerSearchError {
   return new PlayerSearchError(
     'Turnstile authentication failed',
@@ -229,7 +235,7 @@ async function fetchDirect(
   options: RequestInit = {},
   timeoutMs: number = 20000,
 ): Promise<Response> {
-  console.log('[TarkovAPI] Direct fetch:', url);
+  logInfo('TarkovAPI', 'Direct fetch', url);
   const baseHeaders: Record<string, string> = {
     Accept: 'application/json',
   };
@@ -254,20 +260,17 @@ async function fetchViaProxy(
   let lastError: Error | null = null;
   for (let i = 0; i < proxies.length; i++) {
     const proxyUrl = proxies[i](url);
-    console.log(
-      `[TarkovAPI] Trying proxy ${i + 1}/${proxies.length}:`,
-      proxyUrl,
-    );
+    logInfo('TarkovAPI', `Trying proxy ${i + 1}/${proxies.length}`, proxyUrl);
     try {
       const res = await fetchWithTimeout(proxyUrl, options, timeoutMs);
       if (res.ok) {
-        console.log(`[TarkovAPI] Proxy ${i + 1} succeeded`);
+        logInfo('TarkovAPI', `Proxy ${i + 1} succeeded`);
         return res;
       }
-      console.log(`[TarkovAPI] Proxy ${i + 1} returned status:`, res.status);
+      logWarn('TarkovAPI', `Proxy ${i + 1} returned status`, res.status);
       lastError = new Error(`Proxy returned ${res.status}`);
     } catch (err) {
-      console.log(`[TarkovAPI] Proxy ${i + 1} failed:`, err);
+      logWarn('TarkovAPI', `Proxy ${i + 1} failed`, err);
       lastError = err as Error;
     }
   }
@@ -294,7 +297,7 @@ async function apiFetch(
     const directRes = await fetchDirect(url, options, resolvedTimeout);
     if (directRes.ok) return directRes;
   } catch (e) {
-    console.log('[TarkovAPI] Direct fetch failed on web, trying proxies:', e);
+    logInfo('TarkovAPI', 'Direct fetch failed on web, trying proxies', e);
   }
 
   return fetchViaProxy(url, options, resolvedTimeout);
@@ -567,11 +570,11 @@ async function fetchPlayerProfileStaticApi(
     throw new Error(`Player profile failed: ${response.status}`);
   }
 
-  const payload = await response.json();
-  if (!payload || typeof payload !== 'object' || !(payload as any)?.info?.nickname) {
+  const payload = await response.json() as { info?: { nickname?: unknown } } | null;
+  if (!payload?.info?.nickname) {
     throw new Error('Invalid player profile payload');
   }
-  return payload as PlayerProfile;
+  return payload as unknown as PlayerProfile;
 }
 
 async function fetchPlayerProfileWithoutTokenApi(
@@ -612,9 +615,10 @@ async function fetchPlayerProfileWithoutTokenApi(
     throw new Error(message || `Player profile failed: ${response.status}`);
   }
 
-  const payload = await response.json();
-  if ((payload as any)?.err) {
-    const message = String((payload as any)?.errmsg || (payload as any)?.message || 'Unexpected error');
+  const payload = await response.json() as PlayerApiErrorPayload | PlayerProfile;
+  const errPayload = payload as PlayerApiErrorPayload;
+  if (errPayload?.err) {
+    const message = String(errPayload.errmsg || errPayload.message || 'Unexpected error');
     if (isTurnstileFailureMessage(message)) {
       throw createTurnstileError();
     }
@@ -691,7 +695,7 @@ export async function fetchPlayerProfile(
   }
 
   const task = (async () => {
-    console.log('[TarkovAPI] Fetching profile for:', trimmed, gameMode);
+    logInfo('TarkovAPI', 'Fetching profile', { accountId: trimmed, gameMode });
     throwIfAborted(signal);
 
     if (!force) {
@@ -733,7 +737,7 @@ export async function fetchPlayerProfile(
       }
     }
 
-    console.log('[TarkovAPI] Profile loaded:', profile?.info?.nickname);
+    logInfo('TarkovAPI', 'Profile loaded', profile?.info?.nickname);
     if (playerProfileCache.size >= PLAYER_PROFILE_CACHE_LIMIT) {
       const firstKey = playerProfileCache.keys().next().value as string | undefined;
       if (firstKey) playerProfileCache.delete(firstKey);
@@ -758,23 +762,38 @@ export async function fetchPlayerProfile(
   }
 }
 
+type RawPlayerItem = Record<string, unknown>;
+
+interface SearchApiResponse {
+  players?: unknown[];
+  results?: unknown[];
+  data?: { players?: unknown[] };
+  player?: unknown;
+}
+
 function normalizeSearchResults(payload: unknown): SearchResult[] {
-  const pick = (item: any): SearchResult | null => {
-    const id = item?.accountId ?? item?.id ?? item?.aid;
-    const name = item?.nickname ?? item?.name ?? item?.playerName;
+  const pick = (item: unknown): SearchResult | null => {
+    if (!item || typeof item !== 'object') return null;
+    const r = item as RawPlayerItem;
+    const id = r['accountId'] ?? r['id'] ?? r['aid'];
+    const name = r['nickname'] ?? r['name'] ?? r['playerName'];
     if (!id || !name) return null;
     return { id: String(id), name: String(name) };
   };
 
-  const arrays: any[] = [];
-  if (Array.isArray(payload)) arrays.push(payload);
-  if ((payload as any)?.players && Array.isArray((payload as any).players)) arrays.push((payload as any).players);
-  if ((payload as any)?.results && Array.isArray((payload as any).results)) arrays.push((payload as any).results);
-  if ((payload as any)?.data?.players && Array.isArray((payload as any).data.players)) arrays.push((payload as any).data.players);
-  if ((payload as any)?.player) arrays.push([(payload as any).player]);
+  const arrays: unknown[][] = [];
+  if (Array.isArray(payload)) {
+    arrays.push(payload);
+  } else if (payload && typeof payload === 'object') {
+    const r = payload as SearchApiResponse;
+    if (Array.isArray(r.players)) arrays.push(r.players);
+    if (Array.isArray(r.results)) arrays.push(r.results);
+    if (Array.isArray(r.data?.players)) arrays.push(r.data.players as unknown[]);
+    if (r.player !== undefined) arrays.push([r.player]);
+  }
 
   for (const list of arrays) {
-    const mapped = list.map(pick).filter(Boolean) as SearchResult[];
+    const mapped = list.map(pick).filter((x): x is SearchResult => x !== null);
     if (mapped.length > 0) return mapped;
   }
 
@@ -871,9 +890,10 @@ async function searchPlayersRemote(
     throw new PlayerSearchError(message);
   }
 
-  const payload = await response.json();
-  if ((payload as any)?.err) {
-    const message = (payload as any).errmsg || 'Player search failed';
+  const payload = await response.json() as PlayerApiErrorPayload | unknown[];
+  const errPayload = payload as PlayerApiErrorPayload;
+  if (errPayload?.err) {
+    const message = errPayload.errmsg || 'Player search failed';
     if (isTurnstileFailureMessage(message)) {
       await clearPlayerSearchToken();
       logWarn('PlayerSearch', 'Search payload indicates Turnstile failure', {
@@ -956,14 +976,12 @@ export async function warmupPlayerSearch(
       }
 
       playerSearchWarmupAt.set(gameMode, Date.now());
-      console.log('[TarkovAPI] Player search warmup completed');
       logInfo('PlayerSearch', 'Warmup completed');
     } catch (error) {
       if (isAbortError(error)) {
         logInfo('PlayerSearch', 'Warmup canceled');
         return;
       }
-      console.log('[TarkovAPI] Player search warmup skipped:', error);
       logWarn('PlayerSearch', 'Warmup skipped', error);
     } finally {
       if (externalSignal) {
@@ -1145,7 +1163,7 @@ export async function searchPlayers(
   const cacheKey = `${gameMode}:${trimmed.toLowerCase()}`;
   const cached = getCachedPlayerSearchResults(cacheKey);
   if (cached) {
-    console.log('[TarkovAPI] Search cache hit:', cacheKey, cached.length);
+    logInfo('TarkovAPI', 'Search cache hit', { cacheKey, count: cached.length });
     return cached;
   }
 
@@ -1156,14 +1174,14 @@ export async function searchPlayers(
     }
   }
 
-  console.log('[TarkovAPI] Searching players:', trimmed);
+  logInfo('TarkovAPI', 'Searching players', trimmed);
   const task = (async () => {
     const results = await searchPlayersRemote(trimmed, {
       ...options,
       gameMode,
     });
     setCachedPlayerSearchResults(cacheKey, results);
-    console.log('[TarkovAPI] Search results:', results.length);
+    logInfo('TarkovAPI', 'Search results', results.length);
     return results;
   })();
 
@@ -1257,7 +1275,7 @@ async function graphqlFetch<T>(
     const json = await response.json() as { data?: T; errors?: { message: string }[] };
     if (json.errors?.length) {
       if (allowPartialData && json.data) {
-        console.log('[TarkovAPI] GraphQL partial data with errors:', json.errors[0]?.message || 'Unknown GraphQL error');
+        logWarn('TarkovAPI', 'GraphQL partial data with errors', json.errors[0]?.message || 'Unknown GraphQL error');
       } else {
         throw new Error(json.errors[0].message);
       }
@@ -1912,7 +1930,7 @@ export async function fetchItemDetail(
     const exact = await fetchByLanguage(language);
     if (exact) return exact;
   } catch (error) {
-    console.log('[TarkovAPI] Item detail fetch failed (language):', error);
+    logWarn('TarkovAPI', 'Item detail fetch failed (language)', error);
   }
 
   if (language !== 'en') {
@@ -1921,7 +1939,7 @@ export async function fetchItemDetail(
       const fallbackEn = await fetchByLanguage('en');
       if (fallbackEn) return fallbackEn;
     } catch (error) {
-      console.log('[TarkovAPI] Item detail fetch failed (english fallback):', error);
+      logWarn('TarkovAPI', 'Item detail fetch failed (english fallback)', error);
     }
   }
 
@@ -1991,7 +2009,7 @@ async function fetchItemMetaFromAssets(
       return meta;
     }
   } catch (error) {
-    console.log('[TarkovAPI] Item meta fetch failed:', error);
+    logWarn('TarkovAPI', 'Item meta fetch failed', error);
   }
   return null;
 }
@@ -2032,7 +2050,7 @@ export async function fetchItemNamesByTpls(tpls: string[], language: Language = 
           });
           return data.items ?? [];
         } catch (error) {
-          console.log('[TarkovAPI] GraphQL item name fetch failed:', error);
+          logWarn('TarkovAPI', 'GraphQL item name fetch failed', error);
           return [] as { id: string; name: string; shortName?: string }[];
         }
       },
@@ -2132,7 +2150,7 @@ export async function fetchItemMetaByTpls(
           });
           return data.items ?? [];
         } catch (error) {
-          console.log('[TarkovAPI] GraphQL item meta fetch failed:', error);
+          logWarn('TarkovAPI', 'GraphQL item meta fetch failed', error);
           return [] as {
             id: string;
             name: string;
@@ -4504,7 +4522,7 @@ async function fetchBossMapSpawnContext(
     try {
       data = await loadMapData('en');
     } catch (fallbackError) {
-      console.log('[TarkovAPI] Boss map context english fallback failed:', fallbackError);
+      logWarn('TarkovAPI', 'Boss map context english fallback failed', fallbackError);
     }
   }
 
@@ -4732,7 +4750,7 @@ async function fetchHydratedBossItemsByIds(
           );
           return data.items ?? [];
         } catch (error) {
-          console.log('[TarkovAPI] Boss item hydration failed:', error);
+          logWarn('TarkovAPI', 'Boss item hydration failed', error);
           return [] as RawHydratedBossItem[];
         }
       },
@@ -4766,7 +4784,7 @@ async function fetchHydratedBossItemsByIds(
         setBossHydratedItemToCache(id, language, fallbackItem);
       }
     } catch (error) {
-      console.log('[TarkovAPI] Boss item meta fallback failed:', error);
+      logWarn('TarkovAPI', 'Boss item meta fallback failed', error);
     }
   }
   return map;
@@ -4950,7 +4968,7 @@ export async function fetchBosses(
   try {
     spawnContext = await fetchBossMapSpawnContext(language, { signal, gameMode });
   } catch (error) {
-    console.log('[TarkovAPI] Boss map context fetch failed:', error);
+    logWarn('TarkovAPI', 'Boss map context fetch failed', error);
     spawnContext = {
       bossMapsByName: new Map<string, BossMapSpawn[]>(),
       followersByBossName: new Map<string, BossEscort[]>(),
@@ -5065,7 +5083,7 @@ async function fetchBossDetailCandidates(
   try {
     spawnContext = await fetchBossMapSpawnContext(language, { signal, gameMode });
   } catch (error) {
-    console.log('[TarkovAPI] Boss detail map context fetch failed:', error);
+    logWarn('TarkovAPI', 'Boss detail map context fetch failed', error);
     spawnContext = {
       bossMapsByName: new Map<string, BossMapSpawn[]>(),
       followersByBossName: new Map<string, BossEscort[]>(),

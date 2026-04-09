@@ -9,6 +9,7 @@ import {
 } from '@/constants/gameMode';
 import { applyGameModePalette } from '@/constants/colors';
 import { setApiGameMode } from '@/services/tarkovApi';
+import { logWarn } from '@/utils/debugLog';
 
 const GAME_MODE_KEY = 'tarkov_game_mode';
 
@@ -29,7 +30,7 @@ export const [GameModeProvider, useGameMode] = createContextHook(() => {
         applyGameModePalette(normalized);
       })
       .catch((error) => {
-        console.log('[GameMode] Failed to load game mode:', error);
+        logWarn('GameMode', 'Failed to load game mode', error);
       })
       .finally(() => {
         if (isActive) {

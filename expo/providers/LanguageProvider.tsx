@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { Language, SUPPORTED_LANGUAGES, Translations, translations } from '@/constants/i18n';
+import { logWarn } from '@/utils/debugLog';
 
 const LANGUAGE_KEY = 'tarkov_language';
 
@@ -18,7 +19,7 @@ export const [LanguageProvider, useLanguage] = createContextHook(() => {
         }
       })
       .catch((error) => {
-        console.log('[Language] Failed to load language:', error);
+        logWarn('Language', 'Failed to load language', error);
       });
     return () => {
       isActive = false;

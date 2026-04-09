@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { GameMode } from '@/constants/gameMode';
+import { logInfo, logWarn } from '@/utils/debugLog';
 
 const PLAYER_NAME_KEY = 'tarkov_player_name';
 const PLAYER_ACCOUNT_ID_KEY = 'tarkov_player_account_id';
@@ -30,7 +31,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const storedAuthQuery = useQuery({
     queryKey: ['auth-stored'],
     queryFn: async () => {
-      console.log('[Auth] Loading stored auth...');
+      logInfo('Auth', 'Loading stored auth');
       const [signedIn, defaultName, storedName, storedAccountId, regularName, regularAccountId, pveName, pveAccountId] = await Promise.all([
         AsyncStorage.getItem(IS_SIGNED_IN_KEY),
         AsyncStorage.getItem(DEFAULT_SEARCH_NAME_KEY),
@@ -84,7 +85,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   useEffect(() => {
     if (storedAuthQuery.data) {
-      console.log('[Auth] Loaded stored auth:', storedAuthQuery.data);
+      logInfo('Auth', 'Loaded stored auth', storedAuthQuery.data);
       setIsSignedIn(storedAuthQuery.data.isSignedIn);
       setPlayerName(storedAuthQuery.data.playerName);
       setPlayerAccountId(storedAuthQuery.data.playerAccountId);
@@ -94,13 +95,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, [storedAuthQuery.data]);
 
   const continueAsGuest = useCallback(async () => {
-    console.log('[Auth] Continuing as guest');
+    logInfo('Auth', 'Continuing as guest');
     await AsyncStorage.setItem(IS_SIGNED_IN_KEY, 'true');
     setIsSignedIn(true);
   }, []);
 
   const savePlayer = useCallback(async (name: string, accountId: string) => {
-    console.log('[Auth] Saving player:', name, accountId);
+    logInfo('Auth', 'Saving player', { name, accountId });
     const trimmedName = String(name || '').trim();
     const trimmedAccountId = String(accountId || '').trim();
     await Promise.all([
@@ -114,7 +115,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, []);
 
   const clearPlayer = useCallback(async () => {
-    console.log('[Auth] Clearing linked player');
+    logInfo('Auth', 'Clearing linked player');
     await Promise.all([
       AsyncStorage.removeItem(PLAYER_NAME_KEY),
       AsyncStorage.removeItem(PLAYER_ACCOUNT_ID_KEY),
@@ -127,14 +128,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const saveDefaultSearchName = useCallback(async (name: string) => {
     if (!defaultSearchName && name.trim()) {
-      console.log('[Auth] Saving default search name:', name);
+      logInfo('Auth', 'Saving default search name', name);
       await AsyncStorage.setItem(DEFAULT_SEARCH_NAME_KEY, name.trim());
       setDefaultSearchName(name.trim());
     }
   }, [defaultSearchName]);
 
   const signOut = useCallback(async () => {
-    console.log('[Auth] Signing out');
+    logInfo('Auth', 'Signing out');
     await Promise.all([
       AsyncStorage.removeItem(IS_SIGNED_IN_KEY),
       AsyncStorage.removeItem(PLAYER_NAME_KEY),

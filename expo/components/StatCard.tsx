@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Colors from '@/constants/colors';
+import Colors, { withAlpha } from '@/constants/colors';
 
 interface StatCardProps {
   value: string;
@@ -12,7 +12,7 @@ interface StatCardProps {
 export default React.memo(function StatCard({ value, label, color, icon }: StatCardProps) {
   return (
     <View style={styles.card}>
-      <View style={[styles.iconWrap, { backgroundColor: color + '18' }]}>
+      <View style={[styles.iconWrap, { backgroundColor: withAlpha(color, 0.094) }]}>
         {icon}
       </View>
       <Text style={styles.value}>{value}</Text>
